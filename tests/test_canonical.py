@@ -1,31 +1,22 @@
-import pytest
-from datetime import datetime, timezone
-from pydantic import ValidationError
-from app.canonical import AuditEvent
+from app.canonical import canonical
 
-def test_audit_event_creation():
-    event = AuditEvent(
-        eventType="USER_LOGIN",
-        actorId="user-123",
-        resourceType="Account",
-        resourceId="acc-456",
-        payload={"ip": "127.0.0.1"}
-    )
+def test_canonical_sorts_keys():
+    data1 = {"b": 2, "a": 1}
+    data2 = {"a": 1, "b": 2}
     
-    assert event.eventType == "USER_LOGIN"
-    assert event.actorId == "user-123"
-    assert event.resourceType == "Account"
-    assert event.resourceId == "acc-456"
-    assert event.payload == {"ip": "127.0.0.1"}
-    # Timestamp should be auto-assigned
-    assert isinstance(event.timestamp, datetime)
+    # Even though keys are inserted in different orders, the canonical bytes must be exactly the same
+    assert canonical(data1) == canonical(data2)
+    assert canonical(data1) == b'{"a":1,"b":2}'
 
-def test_audit_event_validation_missing_fields():
-    with pytest.raises(ValidationError):
-        # Missing actorId
-        AuditEvent(
-            eventType="USER_LOGIN",
-            resourceType="Account",
-            resourceId="acc-456",
-            payload={}
-        )
+def test_canonical_removes_whitespace():
+    data = {"hello": "world", "number": 42}
+    result = canonical(data)
+    # Ensure no spaces around colons or commas
+    assert result == b'{"hello":"world","number":42}'
+
+def test_canonical_ensure_ascii_false():
+    # If a payload contains non-ascii characters, we want them preserved as raw utf-8, not escaped
+    data = {"emoji": "🚀"}
+    result = canonical(data)
+    assert b"\\u" not in result
+    assert result == b'{"emoji":"\xf0\x9f\x9a\x80"}'
