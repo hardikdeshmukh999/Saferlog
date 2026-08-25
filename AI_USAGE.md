@@ -12,4 +12,10 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **Prompt intent:** Simplify the canonicalization logic and separate it from API payload validation. Define the hashing logic explicitly.
 - **AI Contribution:** Initially proposed combining everything in `canonical.py` with Pydantic.
 - **Human Decision:** Rejected the heavy OOP/Pydantic approach for core hashing. Directed the AI to refactor `canonical.py` into a simple pure function `canonical(value)` that returns deterministic JSON bytes, and `chain.py` for `content_hash` and `record_hash` functions.
-- **Outcome:** Pending rewrite of `canonical.py` and creation of `chain.py` using pure functions.
+- **Outcome:** Refactored `canonical.py` and created `chain.py` using pure functions. Tests pass.
+
+## 2026-08-25: Storage Interface (Brick 3)
+- **Prompt intent:** Define the storage layer for the audit events.
+- **AI Contribution:** Proposed an in-memory Python list for simplicity.
+- **Human Decision:** Overrode the AI's proposal, directing the use of `SQLite3` to provide a real, queryable, persistent database while still being lightweight enough for a prototype.
+- **Outcome:** Pending implementation of `SQLiteStorage` in `app/storage.py`.
