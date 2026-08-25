@@ -37,3 +37,8 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **AI Contribution:** Missed the `from` and `to` time range query parameters in the initial API build.
 - **Human Decision:** Corrected the AI by pointing out the requirement in `Requirement Document.txt`.
 - **Outcome:** Added `from_time` and `to_time` parameters to `GET /events` in `api.py` and implemented the logic in `app/storage.py`.
+## 2026-08-25: Chain Verification (Brick 7)
+- **Prompt intent:** Implement the final Verification API.
+- **AI Contribution:** Added `get_all_events` to storage, `verify_chain` to the service, and a `GET /audit/verify` endpoint in the API. Created an integration test that manually tampers with the SQLite database to prove the API correctly catches it.
+- **Human Decision:** Approved the verification strategy.
+- **Outcome:** Completed Scenario A requirements.

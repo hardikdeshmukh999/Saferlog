@@ -14,7 +14,10 @@ def clean_database():
     For this prototype, we'll just re-initialize the in-memory SQLite store.
     """
     storage.db_path = ":memory:"
-    storage._conn = storage._get_connection() # Reconnect to a fresh memory db
+    # Create a fresh new connection
+    import sqlite3
+    storage._conn = sqlite3.connect(":memory:", check_same_thread=False)
+    storage._conn.row_factory = sqlite3.Row
     storage._init_db()
     yield
 
@@ -68,3 +71,33 @@ def test_query_events():
     # Query for eventType LOGIN
     response2 = client.get("/events?eventType=LOGIN")
     assert len(response2.json()) == 2
+
+def test_verify_chain_intact():
+    # Write a few events
+    client.post("/events", json={"eventType": "LOGIN", "actorId": "user-A", "resourceType": "App", "resourceId": "app-1"})
+    client.post("/events", json={"eventType": "LOGOUT", "actorId": "user-A", "resourceType": "App", "resourceId": "app-1"})
+    
+    response = client.get("/audit/verify")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["isValid"] is True
+    assert data["message"] == "Chain is intact"
+
+def test_verify_chain_broken():
+    # Write events
+    client.post("/events", json={"eventType": "LOGIN", "actorId": "user-A", "resourceType": "App", "resourceId": "app-1"})
+    
+    # Tamper with the database directly to break the chain
+    events = storage.get_all_events()
+    event_to_tamper = events[0]
+    
+    with storage._get_connection() as conn:
+        conn.execute("UPDATE events SET payload = ? WHERE hash = ?", ('{"tampered": true}', event_to_tamper["hash"]))
+        conn.commit()
+        
+    response = client.get("/audit/verify")
+    data = response.json()
+    
+    assert data["isValid"] is False
+    assert data["violationType"] == "TAMPERED_CONTENT"
+

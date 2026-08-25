@@ -61,3 +61,10 @@ def query_events(
         filters["to_time"] = to_time
         
     return storage.query_events(filters)
+
+@app.get("/audit/verify")
+def verify_chain():
+    """
+    Verification API: Walks the full chain and reports whether it is intact.
+    """
+    return service.verify_chain()

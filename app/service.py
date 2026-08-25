@@ -42,3 +42,45 @@ class AuditService:
         self.storage.append_event(event_data)
         
         return event_data
+
+    def verify_chain(self) -> Dict[str, Any]:
+        """
+        Walks the full chain and reports whether it is intact.
+        If broken, reports which record failed and why.
+        """
+        events = self.storage.get_all_events()
+        expected_prev_hash = self.GENESIS_HASH
+        
+        for event in events:
+            # Check 1: Does the previousHash match the actual previous hash?
+            if event["previousHash"] != expected_prev_hash:
+                return {
+                    "isValid": False,
+                    "brokenRecordId": event.get("hash", "UNKNOWN"),
+                    "violationType": "BROKEN_LINK",
+                    "message": f"Expected previousHash {expected_prev_hash} but got {event['previousHash']}."
+                }
+            
+            # Check 2: Does the content hash match the payload?
+            event_copy = event.copy()
+            if "hash" in event_copy:
+                del event_copy["hash"]
+            
+            canonical_bytes = canonical(event_copy)
+            c_hash = content_hash(canonical_bytes)
+            recalculated_hash = record_hash(event["previousHash"], c_hash)
+            
+            if event["hash"] != recalculated_hash:
+                return {
+                    "isValid": False,
+                    "brokenRecordId": event["hash"],
+                    "violationType": "TAMPERED_CONTENT",
+                    "message": "The calculated hash does not match the stored hash."
+                }
+                
+            expected_prev_hash = event["hash"]
+            
+        return {
+            "isValid": True,
+            "message": "Chain is intact"
+        }

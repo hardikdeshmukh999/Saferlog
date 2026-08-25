@@ -16,6 +16,10 @@ class StorageProvider(ABC):
     def query_events(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
         pass
 
+    @abstractmethod
+    def get_all_events(self) -> List[Dict[str, Any]]:
+        pass
+
 class SQLiteStorage(StorageProvider):
     def __init__(self, db_path: str = "audit.db"):
         self.db_path = db_path
@@ -110,6 +114,11 @@ class SQLiteStorage(StorageProvider):
 
         with self._get_connection() as conn:
             cursor = conn.execute(query, params)
+            return [self._row_to_dict(row) for row in cursor.fetchall()]
+
+    def get_all_events(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.execute('SELECT * FROM events ORDER BY id ASC')
             return [self._row_to_dict(row) for row in cursor.fetchall()]
 
     def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
