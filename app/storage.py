@@ -98,8 +98,13 @@ class SQLiteStorage(StorageProvider):
             query += ' AND event_type = ?'
             params.append(filters["eventType"])
             
-        # For simplicity, time ranges aren't implemented in this basic method yet, 
-        # but could be added as "from_time" and "to_time".
+        if "from_time" in filters:
+            query += ' AND timestamp >= ?'
+            params.append(filters["from_time"])
+            
+        if "to_time" in filters:
+            query += ' AND timestamp <= ?'
+            params.append(filters["to_time"])
         
         query += ' ORDER BY id ASC'
 

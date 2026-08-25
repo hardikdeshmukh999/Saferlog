@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 
@@ -39,7 +39,9 @@ def query_events(
     actorId: Optional[str] = None,
     resourceType: Optional[str] = None,
     resourceId: Optional[str] = None,
-    eventType: Optional[str] = None
+    eventType: Optional[str] = None,
+    from_time: Optional[str] = Query(None, description="ISO-8601 timestamp (e.g. 2026-08-25T10:00:00Z)"),
+    to_time: Optional[str] = Query(None, description="ISO-8601 timestamp")
 ):
     """
     Query API: Retrieve events with filtering.
@@ -53,5 +55,9 @@ def query_events(
         filters["resourceId"] = resourceId
     if eventType:
         filters["eventType"] = eventType
+    if from_time:
+        filters["from_time"] = from_time
+    if to_time:
+        filters["to_time"] = to_time
         
     return storage.query_events(filters)

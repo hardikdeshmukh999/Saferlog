@@ -32,4 +32,8 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **Prompt intent:** Implement the Write and Query APIs to expose the service over HTTP.
 - **AI Contribution:** Recommended using `FastAPI` for modern, fast API development and automatic documentation.
 - **Human Decision:** Approved the use of FastAPI.
-- **Outcome:** Created `app/api.py` with `POST /events` and `GET /events` endpoints. Wrote integration tests using FastAPI's `TestClient` in `tests/test_api.py`.
+## 2026-08-25: API Time Range Filter
+- **Prompt intent:** Add missing time range filter to the Query API based on the Requirement Document.
+- **AI Contribution:** Missed the `from` and `to` time range query parameters in the initial API build.
+- **Human Decision:** Corrected the AI by pointing out the requirement in `Requirement Document.txt`.
+- **Outcome:** Added `from_time` and `to_time` parameters to `GET /events` in `api.py` and implemented the logic in `app/storage.py`.
