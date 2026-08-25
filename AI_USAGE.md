@@ -42,3 +42,9 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **AI Contribution:** Added `get_all_events` to storage, `verify_chain` to the service, and a `GET /audit/verify` endpoint in the API. Created an integration test that manually tampers with the SQLite database to prove the API correctly catches it.
 - **Human Decision:** Approved the verification strategy.
 - **Outcome:** Completed Scenario A requirements.
+
+## 2026-08-25: Manual Tampering Experiment (Scenario A Wrap-up)
+- **Prompt intent:** Investigate why manual tampering using a database GUI resulted in a persistent validation failure even after reverting the change.
+- **AI Contribution:** Created `experiment.py` to programmatically demonstrate that the API correctly rejects tampered records and correctly validates restored records when changes are properly written to disk. Explained the "Write Changes" lock mechanism in SQLite GUI tools.
+- **Human Decision:** Conducted manual tampering experiments on the database to rigorously test the chain's integrity.
+- **Outcome:** Proven that the tamper-evident cryptographic logic works flawlessly when database changes are correctly saved. Scenario A is officially complete.
