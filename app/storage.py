@@ -45,6 +45,8 @@ class SQLiteStorage(StorageProvider):
             # Create indexes for faster querying
             conn.execute('CREATE INDEX IF NOT EXISTS idx_actor ON events(actor_id)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_resource ON events(resource_type, resource_id)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_event_type ON events(event_type)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON events(timestamp)')
             conn.commit()
 
     def append_event(self, event: Dict[str, Any]) -> None:
