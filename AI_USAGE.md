@@ -28,3 +28,8 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **AI Contribution:** Designed `AuditService` to automatically fetch the previous hash, assign a server timestamp, generate hashes, and save to SQLite.
 - **Human Decision:** Approved the orchestration logic step-by-step.
 - **Outcome:** Created `app/service.py` and `tests/test_service.py` with passing tests.
+## 2026-08-25: Web APIs (Bricks 5 & 6)
+- **Prompt intent:** Implement the Write and Query APIs to expose the service over HTTP.
+- **AI Contribution:** Recommended using `FastAPI` for modern, fast API development and automatic documentation.
+- **Human Decision:** Approved the use of FastAPI.
+- **Outcome:** Created `app/api.py` with `POST /events` and `GET /events` endpoints. Wrote integration tests using FastAPI's `TestClient` in `tests/test_api.py`.
