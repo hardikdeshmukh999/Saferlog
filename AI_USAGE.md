@@ -23,3 +23,8 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **AI Contribution:** Missed adding indexes for `event_type` and `timestamp` in the initial `SQLiteStorage` creation.
 - **Human Decision:** Identified the missing indexes based on the requirement to query by `eventType` and filter by time range, and directed the AI to add them.
 - **Outcome:** Added `idx_event_type` and `idx_timestamp` to `app/storage.py`.
+## 2026-08-25: Audit Chain Logic (Brick 4)
+- **Prompt intent:** Implement the coordinator service that ties together canonicalization, hashing, and storage.
+- **AI Contribution:** Designed `AuditService` to automatically fetch the previous hash, assign a server timestamp, generate hashes, and save to SQLite.
+- **Human Decision:** Approved the orchestration logic step-by-step.
+- **Outcome:** Created `app/service.py` and `tests/test_service.py` with passing tests.
