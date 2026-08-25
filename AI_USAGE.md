@@ -18,4 +18,8 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **Prompt intent:** Define the storage layer for the audit events.
 - **AI Contribution:** Proposed an in-memory Python list for simplicity.
 - **Human Decision:** Overrode the AI's proposal, directing the use of `SQLite3` to provide a real, queryable, persistent database while still being lightweight enough for a prototype.
-- **Outcome:** Pending implementation of `SQLiteStorage` in `app/storage.py`.
+## 2026-08-25: Storage Optimization
+- **Prompt intent:** Optimize the SQLite storage layer for querying.
+- **AI Contribution:** Missed adding indexes for `event_type` and `timestamp` in the initial `SQLiteStorage` creation.
+- **Human Decision:** Identified the missing indexes based on the requirement to query by `eventType` and filter by time range, and directed the AI to add them.
+- **Outcome:** Added `idx_event_type` and `idx_timestamp` to `app/storage.py`.
