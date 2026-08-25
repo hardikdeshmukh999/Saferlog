@@ -17,6 +17,7 @@ def test_append_and_get_last_event(memory_db):
         "timestamp": "2026-08-25T10:00:00Z",
         "hash": "hash1",
         "previousHash": "genesis",
+        "content_hash": "chash1",
         "payload": {"ip": "127.0.0.1"}
     }
     
@@ -39,6 +40,7 @@ def test_query_events(memory_db):
         "timestamp": "2026-08-25T10:00:00Z",
         "hash": "hash1",
         "previousHash": "genesis",
+        "content_hash": "chash1",
         "payload": {}
     }
     event2 = {
@@ -49,6 +51,7 @@ def test_query_events(memory_db):
         "timestamp": "2026-08-25T10:05:00Z",
         "hash": "hash2",
         "previousHash": "hash1",
+        "content_hash": "chash2",
         "payload": {}
     }
     

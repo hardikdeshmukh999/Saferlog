@@ -19,29 +19,33 @@ class AuditService:
         # 1. Assign server timestamp
         event_data["timestamp"] = datetime.now(timezone.utc).isoformat()
         
-        # 2. Find the previous link in the chain
         last_event = self.storage.get_last_event()
-        if last_event:
-            prev_hash = last_event["hash"]
-        else:
-            prev_hash = self.GENESIS_HASH
+        last_hash = last_event["hash"] if last_event else self.GENESIS_HASH
             
-        event_data["previousHash"] = prev_hash
-        
         # 3. Get the deterministic bytes of the event
-        # (It doesn't have a 'hash' key yet, which is perfect)
-        canonical_bytes = canonical(event_data)
-        
-        # 4. Calculate the hashes
-        c_hash = content_hash(canonical_bytes)
-        final_hash = record_hash(prev_hash, c_hash)
-        
-        event_data["hash"] = final_hash
+        c_hash = content_hash(canonical(event_data))
+        r_hash = record_hash(last_hash, c_hash)
+
+        event_data = {
+            "eventType": event_data["eventType"],
+            "actorId": event_data["actorId"],
+            "resourceType": event_data["resourceType"],
+            "resourceId": event_data["resourceId"],
+            "payload": event_data.get("payload", {}),
+            "timestamp": event_data.get("timestamp"),
+            "previousHash": last_hash,
+            "content_hash": c_hash,
+            "hash": r_hash,
+            "is_archived": 0
+        }
         
         # 5. Save to the database
         self.storage.append_event(event_data)
         
         return event_data
+
+    def archive_event(self, event_hash: str) -> bool:
+        return self.storage.archive_event(event_hash)
 
     def verify_chain(self) -> Dict[str, Any]:
         """
@@ -61,21 +65,33 @@ class AuditService:
                     "message": f"Expected previousHash {expected_prev_hash} but got {event['previousHash']}."
                 }
             
-            # Check 2: Does the content hash match the payload?
-            event_copy = event.copy()
-            if "hash" in event_copy:
-                del event_copy["hash"]
+            # Check 2: If not archived, verify that the payload matches the content_hash
+            if not event.get("is_archived"):
+                event_copy = event.copy()
+                for key in ["hash", "content_hash", "is_archived", "previousHash"]:
+                    if key in event_copy:
+                        del event_copy[key]
+                
+                canonical_bytes = canonical(event_copy)
+                c_hash = content_hash(canonical_bytes)
+                
+                if c_hash != event["content_hash"]:
+                    return {
+                        "isValid": False,
+                        "brokenRecordId": event["hash"],
+                        "violationType": "TAMPERED_PAYLOAD",
+                        "message": "The payload does not match the stored content hash."
+                    }
             
-            canonical_bytes = canonical(event_copy)
-            c_hash = content_hash(canonical_bytes)
-            recalculated_hash = record_hash(event["previousHash"], c_hash)
+            # Check 3: Check record hash using stored content_hash
+            recalculated_hash = record_hash(event["previousHash"], event["content_hash"])
             
             if event["hash"] != recalculated_hash:
                 return {
                     "isValid": False,
                     "brokenRecordId": event["hash"],
-                    "violationType": "TAMPERED_CONTENT",
-                    "message": "The calculated hash does not match the stored hash."
+                    "violationType": "TAMPERED_RECORD",
+                    "message": "The calculated record hash does not match the stored hash."
                 }
                 
             expected_prev_hash = event["hash"]

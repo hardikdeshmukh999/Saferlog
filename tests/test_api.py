@@ -105,7 +105,7 @@ def test_verify_chain_intact():
     response = client.get("/audit/verify")
     assert response.status_code == 200
     data = response.json()
-    assert data["isValid"] is True
+    assert data["isValid"] is True, f"Failed: {data.get('message')} - {data.get('brokenRecordId')}"
     assert data["message"] == "Chain is intact"
 
 def test_verify_chain_broken():
@@ -124,5 +124,23 @@ def test_verify_chain_broken():
     data = response.json()
     
     assert data["isValid"] is False
-    assert data["violationType"] == "TAMPERED_CONTENT"
+    assert data["violationType"] == "TAMPERED_PAYLOAD"
+
+
+def test_archive_event():
+    # 1. Create event
+    response = client.post('/events', json={'eventType': 'LOGIN', 'actorId': 'user-A', 'resourceType': 'App', 'resourceId': 'app-2', 'payload': {'secret': '123'}})
+    event_hash = response.json()['hash']
+    
+    # 2. Archive it
+    arc_response = client.post(f'/events/{event_hash}/archive')
+    assert arc_response.status_code == 200
+    
+    # 3. Query it (should be hidden)
+    query_response = client.get('/events?resourceId=app-2')
+    assert len(query_response.json()) == 0
+    
+    # 4. Verify chain (should still be intact despite missing payload)
+    verify_response = client.get('/audit/verify')
+    assert verify_response.json()['isValid'] is True
 

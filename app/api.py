@@ -73,3 +73,15 @@ def verify_chain():
     Verification API: Walks the full chain and reports whether it is intact.
     """
     return service.verify_chain()
+
+@app.post("/events/{event_hash}/archive", status_code=200)
+def archive_event(event_hash: str):
+    """
+    Retention Policy API: Soft-deletes the payload of an event.
+    """
+    success = service.archive_event(event_hash)
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Event not found or already archived")
+        
+    return {"message": "Event archived successfully", "hash": event_hash}

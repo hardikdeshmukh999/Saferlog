@@ -48,3 +48,9 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **AI Contribution:** Created `experiment.py` to programmatically demonstrate that the API correctly rejects tampered records and correctly validates restored records when changes are properly written to disk. Explained the "Write Changes" lock mechanism in SQLite GUI tools.
 - **Human Decision:** Conducted manual tampering experiments on the database to rigorously test the chain's integrity.
 - **Outcome:** Proven that the tamper-evident cryptographic logic works flawlessly when database changes are correctly saved. Scenario A is officially complete.
+
+## 2026-08-25: Retention Policy (Scenario B - Topic 1)
+- **Prompt intent:** Implement the archiving (soft-delete) feature without breaking chain verification.
+- **AI Contribution:** Designed a scheme where `content_hash` is explicitly stored in the database. When an event is archived, its payload is set to NULL to save space/privacy, but `content_hash` remains. The verification endpoint uses the stored `content_hash` to prove the chain mathematically instead of hashing the (now deleted) payload. Added `POST /events/{hash}/archive`.
+- **Human Decision:** Approved the design to ensure chain integrity persists even after payload deletion.
+- **Outcome:** Successfully implemented and tested the Retention Policy.

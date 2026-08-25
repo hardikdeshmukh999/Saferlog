@@ -40,10 +40,12 @@ class SQLiteStorage(StorageProvider):
                     actor_id TEXT NOT NULL,
                     resource_type TEXT NOT NULL,
                     resource_id TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    hash TEXT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    hash TEXT NOT NULL UNIQUE,
                     previous_hash TEXT NOT NULL,
-                    payload TEXT NOT NULL
+                    content_hash TEXT NOT NULL,
+                    payload TEXT,
+                    is_archived INTEGER DEFAULT 0
                 )
             ''')
             # Create indexes for faster querying
@@ -53,22 +55,24 @@ class SQLiteStorage(StorageProvider):
             conn.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON events(timestamp)')
             conn.commit()
 
-    def append_event(self, event: Dict[str, Any]) -> None:
+    def append_event(self, event_dict: Dict[str, Any]) -> None:
         with self._get_connection() as conn:
             conn.execute('''
                 INSERT INTO events (
                     event_type, actor_id, resource_type, resource_id, 
-                    timestamp, hash, previous_hash, payload
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    timestamp, hash, previous_hash, content_hash, payload, is_archived
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                event["eventType"],
-                event["actorId"],
-                event["resourceType"],
-                event["resourceId"],
-                event["timestamp"],
-                event["hash"],
-                event["previousHash"],
-                json.dumps(event["payload"])
+                event_dict["eventType"],
+                event_dict["actorId"],
+                event_dict["resourceType"],
+                event_dict["resourceId"],
+                event_dict["timestamp"],
+                event_dict["hash"],
+                event_dict["previousHash"],
+                event_dict["content_hash"],
+                json.dumps(event_dict.get("payload", {})) if event_dict.get("payload") is not None else None,
+                event_dict.get("is_archived", 0)
             ))
             conn.commit()
 
@@ -82,8 +86,21 @@ class SQLiteStorage(StorageProvider):
                 
             return self._row_to_dict(row)
 
+    def archive_event(self, event_hash: str) -> bool:
+        """
+        Soft-deletes the payload of an event by setting is_archived=1 and payload=NULL
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute('''
+                UPDATE events 
+                SET is_archived = 1, payload = NULL 
+                WHERE hash = ? AND is_archived = 0
+            ''', (event_hash,))
+            conn.commit()
+            return cursor.rowcount > 0
+
     def query_events(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
-        query = 'SELECT * FROM events WHERE 1=1'
+        query = 'SELECT * FROM events WHERE is_archived = 0'
         params = []
 
         if "actorId" in filters:
@@ -131,7 +148,7 @@ class SQLiteStorage(StorageProvider):
             return [self._row_to_dict(row) for row in cursor.fetchall()]
 
     def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
-        return {
+        result = {
             "eventType": row["event_type"],
             "actorId": row["actor_id"],
             "resourceType": row["resource_type"],
@@ -139,5 +156,12 @@ class SQLiteStorage(StorageProvider):
             "timestamp": row["timestamp"],
             "hash": row["hash"],
             "previousHash": row["previous_hash"],
-            "payload": json.loads(row["payload"])
+            "content_hash": row["content_hash"],
+            "is_archived": bool(row["is_archived"])
         }
+        
+        # Only include payload if it exists (not archived/deleted)
+        if row["payload"] is not None:
+            result["payload"] = json.loads(row["payload"])
+            
+        return result
