@@ -110,8 +110,17 @@ class SQLiteStorage(StorageProvider):
             query += ' AND timestamp <= ?'
             params.append(filters["to_time"])
         
+        # Ensure consistent ordering for pagination
         query += ' ORDER BY id ASC'
-
+            
+        if "limit" in filters:
+            query += ' LIMIT ?'
+            params.append(filters["limit"])
+            
+        if "offset" in filters:
+            query += ' OFFSET ?'
+            params.append(filters["offset"])
+            
         with self._get_connection() as conn:
             cursor = conn.execute(query, params)
             return [self._row_to_dict(row) for row in cursor.fetchall()]

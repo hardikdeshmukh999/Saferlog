@@ -72,6 +72,31 @@ def test_query_events():
     response2 = client.get("/events?eventType=LOGIN")
     assert len(response2.json()) == 2
 
+def test_query_pagination():
+    # Insert 5 events
+    for i in range(5):
+        client.post("/events", json={
+            "eventType": "TEST_PAGINATION",
+            "actorId": f"user-{i}",
+            "resourceType": "App",
+            "resourceId": "app-1"
+        })
+        
+    # Limit to 2
+    response = client.get("/events?eventType=TEST_PAGINATION&limit=2")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    assert data[0]["actorId"] == "user-0"
+    assert data[1]["actorId"] == "user-1"
+    
+    # Offset by 2, limit to 2
+    response2 = client.get("/events?eventType=TEST_PAGINATION&limit=2&offset=2")
+    data2 = response2.json()
+    assert len(data2) == 2
+    assert data2[0]["actorId"] == "user-2"
+    assert data2[1]["actorId"] == "user-3"
+
 def test_verify_chain_intact():
     # Write a few events
     client.post("/events", json={"eventType": "LOGIN", "actorId": "user-A", "resourceType": "App", "resourceId": "app-1"})

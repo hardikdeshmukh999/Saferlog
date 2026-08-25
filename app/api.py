@@ -40,11 +40,13 @@ def query_events(
     resourceType: Optional[str] = None,
     resourceId: Optional[str] = None,
     eventType: Optional[str] = None,
-    from_time: Optional[str] = Query(None, description="ISO-8601 timestamp (e.g. 2026-08-25T10:00:00Z)"),
-    to_time: Optional[str] = Query(None, description="ISO-8601 timestamp")
+    from_time: Optional[float] = None,
+    to_time: Optional[float] = None,
+    limit: int = Query(50, ge=1, le=1000, description="Max number of records to return"),
+    offset: int = Query(0, ge=0, description="Number of records to skip")
 ):
     """
-    Query API: Retrieve events with filtering.
+    Query API: Retrieve events with optional filtering.
     """
     filters = {}
     if actorId:
@@ -59,6 +61,9 @@ def query_events(
         filters["from_time"] = from_time
     if to_time:
         filters["to_time"] = to_time
+        
+    filters["limit"] = limit
+    filters["offset"] = offset
         
     return storage.query_events(filters)
 
