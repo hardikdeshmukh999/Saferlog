@@ -42,7 +42,26 @@ uvicorn app.api:app --reload --port 8000
 You can interact with the API directly through the automatically generated Swagger UI at:  
 👉 **http://127.0.0.1:8000/docs**
 
-### 3. Running the Test Scenarios
+> [!IMPORTANT]
+> The API endpoints use **Zero-Trust HTTP Bearer Authentication**. To use the Swagger UI, click the green **"Authorize"** button and enter the default token: `supersecret`.
+
+### 3. Running the Database (SQLite vs PostgreSQL)
+By default, the application runs on **SQLite** so you can test it instantly without setting up a database server. 
+
+If you want to test the enterprise **PostgreSQL** integration, spin up a local container:
+```bash
+docker run --name saferlog-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=saferlog -p 5432:5432 -d postgres:latest
+```
+Then, set the environment variable before running the server or tests:
+```bash
+# Windows PowerShell
+$env:DATABASE_URL="postgresql://postgres:postgres@localhost:5432/saferlog"
+
+# macOS/Linux
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/saferlog"
+```
+
+### 4. Running the Test Scenarios
 I have provided automated programmatic experiments that walk through all three scenarios from end-to-end. Leave the server running in one terminal, and in another terminal, run:
 ```bash
 # Run Scenario A (Tamper Detection)
