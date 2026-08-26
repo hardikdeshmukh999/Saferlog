@@ -79,6 +79,12 @@ python scripts/scenario_c.py
 #### Option B: Interactive Swagger UI Guide
 You can also manually test the API using the Swagger UI (`http://127.0.0.1:8000/docs`).
 
+**Optional: Seed the Database**
+If you want to instantly populate the database with a dataset of 5 events (including some sensitive data like credit cards and SSNs) so you don't have to type them out yourself, run this command:
+```bash
+python scripts/seed_database.py
+```
+
 **Step 1: Authenticate**
 1. Click the green **Authorize** button at the top right.
 2. In the "Value" box, type exactly: `supersecret`, click **Authorize**, then **Close**.
