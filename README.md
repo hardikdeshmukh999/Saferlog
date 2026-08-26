@@ -150,12 +150,12 @@ The API enforces **Zero Trust** architecture. Write actions (creating events, re
 ### Scenario A: Greenfield (Core Service)
 - **Goal:** Build the append-only log and a `/audit/verify` API to detect tampering.
 - **Execution:** Implemented deterministic JSON hashing and a verification loop that recalculates the chain from Genesis to the latest event.
-- **Validation:** Proved via `scripts/experiment.py`, which manually edits a row in the SQLite database and successfully triggers a `TAMPERED_PAYLOAD` detection alert.
+- **Validation:** Proved via `scripts/scenario_a.py`, which manually edits a row in the database and successfully triggers a `TAMPERED_PAYLOAD` detection alert.
 
 ### Scenario B: Extend Your Own System
 - **Topic 1 - Retention Policy (Archiving):** The `POST /events/{hash}/archive` API sets `payload = NULL` to save disk space. Verification holds because the `content_hash` remains stored intact.
 - **Topic 2 - Structured Redaction:** To comply with privacy laws (e.g., GDPR), the system supports structural redaction. Specific fields (e.g., `credit_card`) are saved as hashes in the primary log, and plaintexts in a side-table. The `POST /events/{hash}/redact/{field}` API permanently deletes the plaintext side-table row.
-- **Validation:** Both features were proven mathematically sound by `scripts/experiment_scenario_b.py`, which validates the chain before and after data deletion.
+- **Validation:** Both features were proven mathematically sound by `scripts/scenario_b.py`, which validates the chain before and after data deletion.
 
 ### Scenario C: Ambiguous Compliance Reporting
 - **Requirement:** *"Regulators need to be able to audit access to client account data."*
