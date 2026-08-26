@@ -61,7 +61,9 @@ $env:DATABASE_URL="postgresql://postgres:postgres@localhost:5432/saferlog"
 export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/saferlog"
 ```
 
-### 4. Running the Test Scenarios
+### 4. Testing the Application
+
+#### Option A: Automated Programmatic Tests
 I have provided automated programmatic experiments that walk through all three scenarios from end-to-end. Leave the server running in one terminal, and in another terminal, run:
 ```bash
 # Run Scenario A (Tamper Detection)
@@ -73,6 +75,54 @@ python scripts/scenario_b.py
 # Run Scenario C (Compliance Reporting Bulk Export)
 python scripts/scenario_c.py
 ```
+
+#### Option B: Interactive Swagger UI Guide
+You can also manually test the API using the Swagger UI (`http://127.0.0.1:8000/docs`).
+
+**Step 1: Authenticate**
+1. Click the green **Authorize** button at the top right.
+2. In the "Value" box, type exactly: `supersecret`, click **Authorize**, then **Close**.
+
+**Step 2: Create an Event (`POST /events`)**
+1. Expand `POST /events`, click **Try it out**, and paste this JSON:
+   ```json
+   {
+     "eventType": "PAYMENT",
+     "actorId": "user-A",
+     "resourceType": "Account",
+     "resourceId": "acc-999",
+     "payload": {
+       "amount": 500,
+       "credit_card": "4111-2222-3333-4444"
+     },
+     "sensitiveFields": ["credit_card"]
+   }
+   ```
+2. Click **Execute**. Copy the `hash` value from the Server Response.
+
+**Step 3: Redact the Credit Card (`POST /events/{event_hash}/redact/{field_name}`)**
+1. Expand the redact route and click **Try it out**.
+2. Paste the `hash` into the `event_hash` box.
+3. Type `credit_card` in the `field_name` box and click **Execute**.
+4. (Optional) Run `GET /events` to see that the credit card is now permanently `REDACTED:salt:hash`.
+
+**Step 4: Archive an Event (`POST /events/{event_hash}/archive`)**
+1. Expand the archive route, paste your `hash`, and click **Execute**.
+2. (Optional) Run `GET /events` to verify the event is no longer returned in queries.
+
+**Step 5: Verify the Chain (`GET /audit/verify`)**
+1. Expand `GET /audit/verify`, click **Try it out**, and **Execute**.
+2. Even though you deleted the sensitive payload (redaction) and archived the record, the response will be `"isValid": true` because the hash chain is mathematically intact!
+
+**Step 6: Export & Verify the Signed Bundle (`GET /events/export`)**
+1. Expand `GET /events/export` and **Execute**.
+2. Copy the entire JSON response (which contains `"events"`, `"signature"`, and `"public_key"`).
+3. Save it to a file named `test_export.json` in the project root.
+4. Open a terminal and run the cryptographic verification script:
+   ```bash
+   python scripts/verify_export.py test_export.json
+   ```
+5. It will print `[+] SUCCESS: The export bundle signature is VALID.` proving the data wasn't tampered with outside the database!
 
 ---
 
