@@ -21,7 +21,7 @@ class StorageProvider(ABC):
         pass
 
 class SQLiteStorage(StorageProvider):
-    def __init__(self, db_path: str = "audit.db"):
+    def __init__(self, db_path: str = "saferlog.db"):
         self.db_path = db_path
         # Use check_same_thread=False for easy testing and async usage later.
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -48,6 +48,17 @@ class SQLiteStorage(StorageProvider):
                     is_archived INTEGER DEFAULT 0
                 )
             ''')
+            
+            # Create a separate table for sensitive payloads (Cryptographic Erasure)
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS sensitive_payloads (
+                    event_hash TEXT NOT NULL,
+                    field_name TEXT NOT NULL,
+                    field_value TEXT NOT NULL,
+                    PRIMARY KEY (event_hash, field_name)
+                )
+            ''')
+            
             # Create indexes for faster querying
             conn.execute('CREATE INDEX IF NOT EXISTS idx_actor ON events(actor_id)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_resource ON events(resource_type, resource_id)')
@@ -140,7 +151,16 @@ class SQLiteStorage(StorageProvider):
             
         with self._get_connection() as conn:
             cursor = conn.execute(query, params)
-            return [self._row_to_dict(row) for row in cursor.fetchall()]
+            events = [self._row_to_dict(row) for row in cursor.fetchall()]
+            
+            # Reassemble sensitive fields if they haven't been redacted
+            for event in events:
+                if event.get("payload") is not None:
+                    sensitive_fields = self.get_sensitive_fields(event["hash"])
+                    for field, value in sensitive_fields.items():
+                        event["payload"][field] = value
+                        
+            return events
 
     def get_all_events(self) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
@@ -165,3 +185,39 @@ class SQLiteStorage(StorageProvider):
             result["payload"] = json.loads(row["payload"])
             
         return result
+
+    def save_sensitive_fields(self, event_hash: str, sensitive_fields: Dict[str, Any]) -> None:
+        """
+        Saves the raw plaintext values of sensitive fields into a separate table.
+        """
+        if not sensitive_fields:
+            return
+            
+        with self._get_connection() as conn:
+            for field, value in sensitive_fields.items():
+                conn.execute('''
+                    INSERT INTO sensitive_payloads (event_hash, field_name, field_value)
+                    VALUES (?, ?, ?)
+                ''', (event_hash, field, json.dumps(value)))
+            conn.commit()
+
+    def redact_field(self, event_hash: str, field_name: str) -> bool:
+        """
+        Cryptographic Erasure: Deletes the plaintext value from the database.
+        The hashed version remains in the main payload, keeping the chain mathematically intact.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute('''
+                DELETE FROM sensitive_payloads 
+                WHERE event_hash = ? AND field_name = ?
+            ''', (event_hash, field_name))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_sensitive_fields(self, event_hash: str) -> Dict[str, Any]:
+        """
+        Retrieves any un-redacted sensitive fields for an event.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute('SELECT field_name, field_value FROM sensitive_payloads WHERE event_hash = ?', (event_hash,))
+            return {row["field_name"]: json.loads(row["field_value"]) for row in cursor.fetchall()}

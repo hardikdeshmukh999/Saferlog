@@ -1,0 +1,114 @@
+# Saferlog: Tamper-Evident Audit Log Service
+
+**Charles Schwab & Co., Inc.** — Interview Assignment Submission  
+**Candidate:** Hardik Deshmukh  
+**Date:** 2026-08-26
+
+## Overview
+
+Saferlog is a prototype microservice designed to ingest, store, and cryptographically verify audit log events. It implements a deterministic hash chain to guarantee non-repudiation and tamper-evidence, ensuring that once an event is recorded, it cannot be modified or reordered without breaking the mathematical integrity of the chain.
+
+This project was built iteratively using an AI-Assisted Software Engineering System, covering three distinct scenarios:
+- **Scenario A (Greenfield):** Core Audit Log Service
+- **Scenario B (Extend Your Own System):** Retention (Archiving) and Redaction (Cryptographic Erasure)
+- **Scenario C (Ambiguous Requirement):** Compliance Reporting via Cryptographically Signed Bulk Exports
+
+---
+
+## Setup Instructions
+
+### Prerequisites
+- Python 3.11+
+- Windows/macOS/Linux
+
+### 1. Installation
+Clone the repository and navigate into the project root. Create a virtual environment and install the dependencies:
+```bash
+python -m venv venv
+# Windows:
+.\venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+pip install -r requirements.txt
+```
+*(If `requirements.txt` is missing, run: `pip install fastapi uvicorn sqlite3 cryptography pytest requests`)*
+
+### 2. Running the API Server
+Start the FastAPI server using Uvicorn:
+```bash
+uvicorn app.api:app --reload --port 8000
+```
+You can interact with the API directly through the automatically generated Swagger UI at:  
+👉 **http://127.0.0.1:8000/docs**
+
+### 3. Running the Test Scenarios
+I have provided automated programmatic experiments that walk through all three scenarios from end-to-end. Leave the server running in one terminal, and in another terminal, run:
+```bash
+# Run Scenario A (Tamper Detection)
+python scripts/scenario_a.py
+
+# Run Scenario B (Retention Policy & Redaction)
+python scripts/scenario_b.py
+
+# Run Scenario C (Compliance Reporting Bulk Export)
+python scripts/scenario_c.py
+```
+
+---
+
+## Architecture Overview
+
+### Data Model
+The system uses **SQLite** as its persistence layer to minimize dependencies and allow for easy review. The schema contains two core tables:
+1. `events`: The immutable, append-only log. It stores the `hash`, `previousHash`, and `content_hash` of each event, along with the `payload` (if not archived) and metadata.
+2. `sensitive_payloads`: A mutable side-table used for **Cryptographic Erasure**. When sensitive fields are ingested, they are stored here in plaintext, while their salted hashes are saved in the `events` table. 
+
+### Cryptographic Chain Design
+- **Hashing Algorithm:** `SHA-256` (via Python's `hashlib`). Chosen for its industry-standard security, speed, and collision resistance.
+- **Canonicalization:** To ensure the JSON `payload` consistently produces the exact same hash across different machines or languages, the payload is serialized deterministically (sorted keys, stripped whitespace) before hashing.
+- **The Chain:** Every event calculates its hash as: `SHA256( previousHash + content_hash )`. This perfectly links every event to the history of the entire database, and the `content_hash` mathematically protects the metadata (including the `timestamp`) and the `payload`.
+
+---
+
+## Scenarios Completed
+
+### Scenario A: Greenfield (Core Service)
+- **Goal:** Build the append-only log and a `/audit/verify` API to detect tampering.
+- **Execution:** Implemented deterministic JSON hashing and a verification loop that recalculates the chain from Genesis to the latest event.
+- **Validation:** Proved via `scripts/experiment.py`, which manually edits a row in the SQLite database and successfully triggers a `TAMPERED_PAYLOAD` detection alert.
+
+### Scenario B: Extend Your Own System
+- **Topic 1 - Retention Policy (Archiving):** The `POST /events/{hash}/archive` API sets `payload = NULL` to save disk space. Verification holds because the `content_hash` remains stored intact.
+- **Topic 2 - Structured Redaction:** To comply with privacy laws (e.g., GDPR), the system supports structural redaction. Specific fields (e.g., `credit_card`) are saved as hashes in the primary log, and plaintexts in a side-table. The `POST /events/{hash}/redact/{field}` API permanently deletes the plaintext side-table row.
+- **Validation:** Both features were proven mathematically sound by `scripts/experiment_scenario_b.py`, which validates the chain before and after data deletion.
+
+### Scenario C: Ambiguous Compliance Reporting
+- **Requirement:** *"Regulators need to be able to audit access to client account data."*
+- **Clarification & Design:** Exporting a non-contiguous subset of events from a linear hash chain breaks the mathematical proof. To solve this, I designed a **Cryptographically Signed JSON Bundle** feature.
+- **Execution:** The `GET /events/export` API extracts the filtered data and signs it using an internal system RSA private key. The regulator is provided a standalone offline script (`scripts/verify_export.py`) to mathematically prove the bundle originated from Saferlog.
+
+---
+
+## Testing Approach, Limitations, and Trade-offs
+
+### Testing Approach
+- **Unit Testing:** Used `pytest` to test low-level deterministic JSON canonicalization and hash generation logic (`tests/test_service.py`).
+- **Integration/E2E Testing:** Relied on programmatic python scripts (`scripts/experiment_*.py`) mimicking a live client interacting with the FastAPI endpoints (`TestClient` and `requests`), ensuring the entire lifecycle (ingestion -> tampering -> redaction -> export -> verification) works continuously.
+
+### Limitations & Trade-offs
+- **Linear Hash Chain vs. Merkle Tree:** I chose a simple linear hash chain. It is easier to implement and perfectly tamper-evident. The trade-off is that you cannot mathematically verify a subset of data (like a Merkle Proof allows). We mitigated this limitation in Scenario C by using RSA signatures for exports instead.
+- **SQLite Concurrency:** SQLite is heavily locked during writes. This is fine for a prototype but would not scale to enterprise throughput. In production, this would be swapped to PostgreSQL.
+- **Static Salt in Redaction:** Our current redaction prototype uses a static application-wide pepper/salt. In a production system, a unique per-field salt should be generated and stored securely.
+
+---
+
+## Final Engineering Summary
+
+Building Saferlog was an exercise in balancing immutable cryptographic non-repudiation with the very real business needs of data deletion (retention and privacy compliance). 
+
+By strictly adhering to a modular architecture (separating `api.py`, `service.py`, `storage.py`, and `crypto.py`), the system proved highly extensible. When the requirement to structurally redact data was introduced in Scenario B, the separation of concerns allowed us to cleanly implement a side-table lookup strategy without rewriting the core hashing engine.
+
+**AI Collaboration:** The AI was instrumental in identifying cryptographic edge cases early—specifically, recognizing that exporting non-contiguous blocks of a linear hash chain (Scenario C) is impossible to verify without intermediary hashes. The AI proposed the RSA Signed Bundle workaround, which I approved, resulting in a highly scalable and practical compliance solution.
+
+All requirements have been met, documented, and proven through executable code. Thank you for the opportunity!

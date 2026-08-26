@@ -19,6 +19,26 @@ class AuditService:
         # 1. Assign server timestamp
         event_data["timestamp"] = datetime.now(timezone.utc).isoformat()
         
+        # 1b. Cryptographic Erasure: Hash sensitive fields
+        sensitive_fields = event_data.pop("sensitiveFields", None)
+        extracted_sensitive_data = {}
+        
+        print(f"DEBUG: sensitive_fields={sensitive_fields}, payload={event_data.get('payload')}")
+        
+        if sensitive_fields and "payload" in event_data:
+            import hashlib
+            payload = event_data["payload"]
+            for field in sensitive_fields:
+                if field in payload:
+                    # Save the raw value
+                    raw_val = payload[field]
+                    extracted_sensitive_data[field] = raw_val
+                    
+                    # Replace with a salted hash in the payload
+                    salted_val = f"{raw_val}_somesalt123"
+                    hashed_val = hashlib.sha256(salted_val.encode('utf-8')).hexdigest()
+                    payload[field] = f"REDACTED:{hashed_val}"
+        
         last_event = self.storage.get_last_event()
         last_hash = last_event["hash"] if last_event else self.GENESIS_HASH
             
@@ -42,7 +62,14 @@ class AuditService:
         # 5. Save to the database
         self.storage.append_event(event_data)
         
+        # 6. Save sensitive plaintext values separately
+        if extracted_sensitive_data:
+            self.storage.save_sensitive_fields(r_hash, extracted_sensitive_data)
+            
         return event_data
+
+    def redact_field(self, event_hash: str, field_name: str) -> bool:
+        return self.storage.redact_field(event_hash, field_name)
 
     def archive_event(self, event_hash: str) -> bool:
         return self.storage.archive_event(event_hash)

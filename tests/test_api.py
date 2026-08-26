@@ -144,3 +144,41 @@ def test_archive_event():
     verify_response = client.get('/audit/verify')
     assert verify_response.json()['isValid'] is True
 
+
+def test_structured_redaction():
+    # 1. Create event with sensitive fields
+    response = client.post('/events', json={
+        'eventType': 'REGISTER', 
+        'actorId': 'user-A', 
+        'resourceType': 'App', 
+        'resourceId': 'app-2', 
+        'payload': {'public': 'hello', 'secret_ssn': '12345'},
+        'sensitiveFields': ['secret_ssn']
+    })
+    event_hash = response.json()['hash']
+    
+    # 2. Query it (the raw value should be reassembled and visible!)
+    query_response = client.get(f'/events?eventType=REGISTER')
+    events = [e for e in query_response.json() if e['hash'] == event_hash]
+    assert len(events) == 1
+    assert events[0]['payload']['secret_ssn'] == '12345'
+    assert events[0]['payload']['public'] == 'hello'
+    
+    # 3. Verify chain is intact
+    verify_response = client.get('/audit/verify')
+    assert verify_response.json()['isValid'] is True
+    
+    # 4. Redact the field
+    redact_response = client.post(f'/events/{event_hash}/redact/secret_ssn')
+    assert redact_response.status_code == 200
+    
+    # 5. Query it again (the raw value should be gone, only the hash remains)
+    query_response2 = client.get(f'/events?eventType=REGISTER')
+    events2 = [e for e in query_response2.json() if e['hash'] == event_hash]
+    assert 'REDACTED:' in events2[0]['payload']['secret_ssn']
+    assert events2[0]['payload']['public'] == 'hello'
+    
+    # 6. Verify chain is STILL intact
+    verify_response2 = client.get('/audit/verify')
+    assert verify_response2.json()['isValid'] is True
+

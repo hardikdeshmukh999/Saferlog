@@ -54,3 +54,26 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **AI Contribution:** Designed a scheme where `content_hash` is explicitly stored in the database. When an event is archived, its payload is set to NULL to save space/privacy, but `content_hash` remains. The verification endpoint uses the stored `content_hash` to prove the chain mathematically instead of hashing the (now deleted) payload. Added `POST /events/{hash}/archive`.
 - **Human Decision:** Approved the design to ensure chain integrity persists even after payload deletion.
 - **Outcome:** Successfully implemented and tested the Retention Policy.
+
+## 2026-08-25: Structured Redaction (Scenario B - Topic 2)
+- **Prompt intent:** Implement fine-grained redaction of sensitive fields within an audit record while maintaining chain integrity.
+- **AI Contribution:** Suggested using a separate `sensitive_payloads` table to store raw values, replacing them with salted hashes in the main `events` table. Proposed a redaction endpoint to drop raw data while preserving the cryptographic linkage.
+- **Human Decision:** Approved the redaction scheme as it satisfies both privacy(deletion) requirements and audit chain non-repudiation.
+- **Outcome:** Implemented `POST /events/{hash}/redact/{field}`, updated storage schema, and verified that query views dynamically reassemble non-redacted data correctly. Tests pass.
+
+## 2026-08-26: Compliance Reporting via Bulk Export (Scenario C - Topic 3)
+- **Prompt intent:** Solve the ambiguous requirement: *"Regulators need to be able to audit access to client account data."*
+- **AI Contribution:** Identified that exporting a non-contiguous subset of a hash chain breaks mathematical verification because intermediary hashes are missing. Proposed an alternative "Cryptographically Signed JSON Bundle" using asymmetric RSA keys, allowing regulators to receive a self-contained export that proves it genuinely originated from Saferlog without requiring the entire multi-gigabyte chain.
+- **Human Decision:** Approved the design choice as a practical, scalable alternative to forcing full-database replication or rebuilding the system using Merkle Trees.
+- **Outcome:** Created `app/crypto.py` for RSA keypair generation, implemented `GET /events/export` to generate and sign the payload, and wrote a standalone `verify_export.py` for regulators to run offline. Tested full generation and verification successfully.
+
+## 2026-08-26: Final QA, Refactoring, and Deliverables
+- **Prompt intent:** 
+  - *"explain what did you do"* / *"now explain me the logic simple"* / *"ok now tell me line by line what you implemented for secnario b topic 2 briefly with example"* (Requested deep-dive explanations of the Redaction logic and trade-offs).
+  - *"properly test this section B with mutliple data rows"* / *"did you test secnario B topiic properly?"* / *"event 1 payload is gone? what do you mean?"* (Demanded rigorous QA of the Redaction/Archiving interaction, leading to the discovery of a locked background process and successful verification of the math).
+  - *"Next thing we need to work on is DEliverabless"* (Initiated the final README compilation).
+  - *"add requiremnt.txt, do we really need to do this? $env:PYTHONPATH="." ... Check the scripts folder , remove uncessary files, have a clear minimal only required files with proper name convetnion for each sncario"* (Requested directory cleanup, script standardization, and removal of boilerplate commands).
+  - *"i fell this is wrong 'The Chain: Every event calculates its hash as: SHA256( previousHash + content_hash + timestamp' we are not adding timestamp spratelt right its in the content_hash?"* (Human review caught a technical inaccuracy in the AI-generated README regarding how the timestamp is hashed).
+- **AI Contribution:** Explained the technical architecture of cryptographic erasure vs soft-deletion. Debugged the locked `uvicorn` process that was causing false-positive verification failures. Consolidated all deliverables into a comprehensive `README.md`. Organized the codebase into a clean `scripts/` directory with standardized naming (`scenario_a.py`, `scenario_b.py`, `scenario_c.py`). Corrected the mathematical description in the README based on the human's catch.
+- **Human Decision:** Acted as the technical reviewer and QA lead, forcing the AI to prove its implementation with robust data rows, pushing for cleaner directory structures, and manually verifying the accuracy of the final documentation.
+- **Outcome:** The codebase was finalized with a clean structure, a `requirements.txt` file, fully functioning self-contained test scripts, and an accurate, professional `README.md` that completes the Charles Schwab assignment deliverables.
