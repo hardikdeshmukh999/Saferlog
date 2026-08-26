@@ -57,12 +57,17 @@ python scripts/scenario_c.py
 
 ---
 
-## Architecture Overview
+### Architecture Overview
 
-### Data Model
-The system uses **SQLite** as its persistence layer to minimize dependencies and allow for easy review. The schema contains two core tables:
+### Data Model & Storage Factory
+The system uses a **Storage Factory Pattern** (`get_storage()`). By default, it runs seamlessly on **SQLite** to allow reviewers to run the prototype instantly. However, if the `DATABASE_URL` environment variable is detected, it automatically spins up a **PostgreSQL** connection using `psycopg2`, allowing for high-concurrency production deployments.
+
+The schema contains two core tables:
 1. `events`: The immutable, append-only log. It stores the `hash`, `previousHash`, and `content_hash` of each event, along with the `payload` (if not archived) and metadata.
-2. `sensitive_payloads`: A mutable side-table used for **Cryptographic Erasure**. When sensitive fields are ingested, they are stored here in plaintext, while their salted hashes are saved in the `events` table. 
+2. `sensitive_payloads`: A mutable side-table used for **Cryptographic Erasure**. When sensitive fields are ingested, they are stored here in plaintext, while their dynamically salted hashes are saved in the `events` table. 
+
+### Security & Authentication
+The API enforces **Zero Trust** architecture. Write actions (creating events, redacting, archiving) are protected by a FastAPI `Depends` dependency that validates an `Authorization: Bearer <API_TOKEN>` header.
 
 ### Cryptographic Chain Design
 - **Hashing Algorithm:** `SHA-256` (via Python's `hashlib`). Chosen for its industry-standard security, speed, and collision resistance.
@@ -94,12 +99,17 @@ The system uses **SQLite** as its persistence layer to minimize dependencies and
 
 ### Testing Approach
 - **Unit Testing:** Used `pytest` to test low-level deterministic JSON canonicalization and hash generation logic (`tests/test_service.py`).
-- **Integration/E2E Testing:** Relied on programmatic python scripts (`scripts/experiment_*.py`) mimicking a live client interacting with the FastAPI endpoints (`TestClient` and `requests`), ensuring the entire lifecycle (ingestion -> tampering -> redaction -> export -> verification) works continuously.
+- **Integration/E2E Testing:** Relied on programmatic python scripts (`scripts/scenario_*.py`) mimicking a live client interacting with the FastAPI endpoints (`TestClient` and `requests`), ensuring the entire lifecycle works continuously while passing the required `Bearer` authentication headers.
 
 ### Limitations & Trade-offs
 - **Linear Hash Chain vs. Merkle Tree:** I chose a simple linear hash chain. It is easier to implement and perfectly tamper-evident. The trade-off is that you cannot mathematically verify a subset of data (like a Merkle Proof allows). We mitigated this limitation in Scenario C by using RSA signatures for exports instead.
-- **SQLite Concurrency:** SQLite is heavily locked during writes. This is fine for a prototype but would not scale to enterprise throughput. In production, this would be swapped to PostgreSQL.
-- **Static Salt in Redaction:** Our current redaction prototype uses a static application-wide pepper/salt. In a production system, a unique per-field salt should be generated and stored securely.
+- **Relational vs. NoSQL:** Using a relational database (PostgreSQL) is excellent for relational indexing, but NoSQL (like MongoDB) might offer faster pure-append throughput for logs. However, the requirement to do complex queries (Scenario C) made SQL the better choice.
+
+### Production-Grade Upgrades
+If this were deployed to production tomorrow, the following upgrades (which were built into this prototype) are crucial:
+1. **PostgreSQL Fallback:** SQLite is replaced by PostgreSQL to prevent "database is locked" errors during highly concurrent writes.
+2. **Streaming Generators:** The `/audit/verify` API uses server-side cursors (`yield`) to stream the hash chain into memory in chunks of 1,000, preventing Out-Of-Memory (OOM) crashes on multi-gigabyte databases.
+3. **Dynamic Cryptographic Salting:** Redaction does not use a global static pepper. Instead, a unique 16-byte cryptographic salt (`os.urandom(16).hex()`) is generated for *every single sensitive field* and embedded in the deterministic JSON payload to thwart Rainbow Table attacks.
 
 ---
 

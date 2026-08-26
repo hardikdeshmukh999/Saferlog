@@ -1,18 +1,33 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 import json
+import os
 
-from app.storage import SQLiteStorage
+from app.storage import get_storage
 from app.service import AuditService
 from app.crypto import CryptoService
 
 app = FastAPI(title="Audit Log Service", description="Tamper-evident audit log prototype")
 
-# Initialize our core components
-storage = SQLiteStorage()
+# Initialize our core components using the factory
+storage = get_storage()
 service = AuditService(storage)
 crypto_service = CryptoService()
+
+# Authentication Setup
+security = HTTPBearer()
+API_TOKEN = os.environ.get("API_TOKEN", "supersecret")
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials.credentials != API_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credentials.credentials
 
 class EventCreateRequest(BaseModel):
     """
@@ -25,7 +40,7 @@ class EventCreateRequest(BaseModel):
     payload: Dict[str, Any] = Field(default_factory=dict, json_schema_extra={"example": {"ip": "127.0.0.1", "ssn": "123-45-678"}})
     sensitiveFields: Optional[list[str]] = Field(None, json_schema_extra={"example": ["ssn"]}, description="List of keys in the payload to cryptographically erase later")
 
-@app.post("/events", status_code=201)
+@app.post("/events", status_code=201, dependencies=[Depends(verify_token)])
 def create_event(request: EventCreateRequest):
     """
     Write API: Accepts an event record, calculates hashes, and stores it in the append-only log.
@@ -123,7 +138,7 @@ def verify_chain():
     """
     return service.verify_chain()
 
-@app.post("/events/{event_hash}/archive", status_code=200)
+@app.post("/events/{event_hash}/archive", status_code=200, dependencies=[Depends(verify_token)])
 def archive_event(event_hash: str):
     """
     Retention Policy API: Soft-deletes the payload of an event.
@@ -135,7 +150,7 @@ def archive_event(event_hash: str):
         
     return {"message": "Event archived successfully", "hash": event_hash}
 
-@app.post("/events/{event_hash}/redact/{field_name}", status_code=200)
+@app.post("/events/{event_hash}/redact/{field_name}", status_code=200, dependencies=[Depends(verify_token)])
 def redact_field(event_hash: str, field_name: str):
     """
     Cryptographic Erasure API: Permanently deletes the plaintext value of a sensitive field.

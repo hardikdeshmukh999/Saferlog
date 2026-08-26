@@ -5,17 +5,21 @@ import sqlite3
 from fastapi.testclient import TestClient
 from app.api import app, storage
 
-# Force a clean DB for the experiment
-storage.db_path = 'saferlog_scenario_a.db'
-try:
-    if os.path.exists(storage.db_path):
-        os.remove(storage.db_path)
-except:
-    pass
+def clean_db():
+    if hasattr(storage, "db_url"):  # Postgres
+        with storage._get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("TRUNCATE events, sensitive_payloads RESTART IDENTITY")
+            conn.commit()
+    else:  # SQLite
+        with storage._get_connection() as conn:
+            conn.execute("DELETE FROM events")
+            conn.execute("DELETE FROM sensitive_payloads")
+            # reset auto increment
+            conn.execute("DELETE FROM sqlite_sequence WHERE name='events'")
+            conn.commit()
 
-storage._conn = sqlite3.connect(storage.db_path, check_same_thread=False)
-storage._conn.row_factory = sqlite3.Row
-storage._init_db()
+clean_db()
 
 client = TestClient(app)
 
@@ -33,7 +37,7 @@ def run_experiment():
     ]
     
     for event in events:
-        client.post("/events", json=event)
+        client.post("/events", json=event, headers={"Authorization": "Bearer supersecret"})
         print(f"   Created Event | Type: {event['eventType']} | Actor: {event['actorId']}")
 
     # 2. Initial Chain Verification (Before Tampering)
@@ -42,11 +46,16 @@ def run_experiment():
     print(f"   Status: {'VALID' if response.json()['isValid'] else 'BROKEN'}")
 
     # 3. Simulate a Malicious Database Edit
-    print("\n3. Malicious Actor directly modifies the SQLite database (Changing Event 2's payload)...")
-    conn = sqlite3.connect(storage.db_path)
-    conn.execute("UPDATE events SET payload='{\"size\": 9999}' WHERE id=2")
-    conn.commit()
-    conn.close()
+    print("\n3. Malicious Actor directly modifies the database (Changing Event 2's payload)...")
+    if hasattr(storage, "db_url"):  # Postgres
+        with storage._get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE events SET payload='{\"size\": 9999}' WHERE id=2")
+            conn.commit()
+    else:  # SQLite
+        with storage._get_connection() as conn:
+            conn.execute("UPDATE events SET payload='{\"size\": 9999}' WHERE id=2")
+            conn.commit()
     print("   -> Tampering successful. Database edited behind the application's back.")
 
     # 4. Final Verification

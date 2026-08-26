@@ -27,6 +27,7 @@ class AuditService:
         
         if sensitive_fields and "payload" in event_data:
             import hashlib
+            import os
             payload = event_data["payload"]
             for field in sensitive_fields:
                 if field in payload:
@@ -34,10 +35,12 @@ class AuditService:
                     raw_val = payload[field]
                     extracted_sensitive_data[field] = raw_val
                     
-                    # Replace with a salted hash in the payload
-                    salted_val = f"{raw_val}_somesalt123"
+                    # Generate a unique cryptographic salt for this specific field
+                    salt = os.urandom(16).hex()
+                    salted_val = f"{raw_val}_{salt}"
                     hashed_val = hashlib.sha256(salted_val.encode('utf-8')).hexdigest()
-                    payload[field] = f"REDACTED:{hashed_val}"
+                    # Securely embed the salt in the deterministic payload structure
+                    payload[field] = f"REDACTED:{salt}:{hashed_val}"
         
         last_event = self.storage.get_last_event()
         last_hash = last_event["hash"] if last_event else self.GENESIS_HASH
@@ -79,7 +82,7 @@ class AuditService:
         Walks the full chain and reports whether it is intact.
         If broken, reports which record failed and why.
         """
-        events = self.storage.get_all_events()
+        events = self.storage.stream_all_events()
         expected_prev_hash = self.GENESIS_HASH
         
         for event in events:

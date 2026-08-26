@@ -4,3 +4,4 @@ pydantic
 cryptography
 httpx
 pytest
+psycopg2-binary

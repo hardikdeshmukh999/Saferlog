@@ -5,16 +5,20 @@ from app.api import app
 from app.api import storage
 import sqlite3
 
-# Force a clean DB for the experiment
-storage.db_path = 'saferlog_test2.db'
-try:
-    import os
-    os.remove('saferlog_test2.db')
-except:
-    pass
-storage._conn = sqlite3.connect(storage.db_path, check_same_thread=False)
-storage._conn.row_factory = sqlite3.Row
-storage._init_db()
+def clean_db():
+    if hasattr(storage, "db_url"):  # Postgres
+        with storage._get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("TRUNCATE events, sensitive_payloads RESTART IDENTITY")
+            conn.commit()
+    else:  # SQLite
+        with storage._get_connection() as conn:
+            conn.execute("DELETE FROM events")
+            conn.execute("DELETE FROM sensitive_payloads")
+            conn.execute("DELETE FROM sqlite_sequence WHERE name='events'")
+            conn.commit()
+
+clean_db()
 
 client = TestClient(app)
 
@@ -52,7 +56,7 @@ def run_experiment():
     
     saved_hashes = []
     for i, event in enumerate(events):
-        response = client.post("/events", json=event)
+        response = client.post("/events", json=event, headers={"Authorization": "Bearer supersecret"})
         if response.status_code not in [200, 201]:
             print(f"Failed to connect or create event: {response.status_code} - {response.text}")
             return
@@ -67,13 +71,13 @@ def run_experiment():
     # 3. Topic 1: Retention Policy (Archiving)
     archive_hash = saved_hashes[0] # Archive the LOGIN event
     print(f"\n3. Executing Topic 1: Archiving Event 1 (Hash: {archive_hash[:12]})...")
-    client.post(f"/events/{archive_hash}/archive")
+    client.post(f"/events/{archive_hash}/archive", headers={"Authorization": "Bearer supersecret"})
     print("   -> Payload for Event 1 has been completely wiped from the database.")
     
     # 4. Topic 2: Structured Redaction
     redact_hash = saved_hashes[1] # Redact the PAYMENT event's credit card
     print(f"\n4. Executing Topic 2: Redacting 'credit_card' from Event 2 (Hash: {redact_hash[:12]})...")
-    client.post(f"/events/{redact_hash}/redact/credit_card")
+    client.post(f"/events/{redact_hash}/redact/credit_card", headers={"Authorization": "Bearer supersecret"})
     print("   -> Plaintext credit_card value has been permanently deleted from the side-table.")
     
     # 5. Query the Data (Let's see what it looks like now!)
