@@ -61,23 +61,8 @@ $env:DATABASE_URL="postgresql://postgres:postgres@localhost:5432/saferlog"
 export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/saferlog"
 ```
 
-### 4. Testing the Application
-
-#### Option A: Automated Programmatic Tests
-I have provided automated programmatic experiments that walk through all three scenarios from end-to-end. Leave the server running in one terminal, and in another terminal, run:
-```bash
-# Run Scenario A (Tamper Detection)
-python scripts/scenario_a.py
-
-# Run Scenario B (Retention Policy & Redaction)
-python scripts/scenario_b.py
-
-# Run Scenario C (Compliance Reporting Bulk Export)
-python scripts/scenario_c.py
-```
-
-#### Option B: Interactive Swagger UI Guide
-You can also manually test the API using the Swagger UI (`http://127.0.0.1:8000/docs`).
+### 4. Testing the Application (Interactive Swagger UI)
+You can manually test the API using the Swagger UI (`http://127.0.0.1:8000/docs`).
 
 **Optional: Seed the Database**
 If you want to instantly populate the database with a dataset of 5 events (including some sensitive data like credit cards and SSNs) so you don't have to type them out yourself, run this command:
@@ -156,12 +141,12 @@ The API enforces **Zero Trust** architecture. Write actions (creating events, re
 ### Scenario A: Greenfield (Core Service)
 - **Goal:** Build the append-only log and a `/audit/verify` API to detect tampering.
 - **Execution:** Implemented deterministic JSON hashing and a verification loop that recalculates the chain from Genesis to the latest event.
-- **Validation:** Proved via `scripts/scenario_a.py`, which manually edits a row in the database and successfully triggers a `TAMPERED_PAYLOAD` detection alert.
+- **Validation:** Proved via `tests/scenario_a.py`, which manually edits a row in the database and successfully triggers a `TAMPERED_PAYLOAD` detection alert.
 
 ### Scenario B: Extend Your Own System
 - **Topic 1 - Retention Policy (Archiving):** The `POST /events/{hash}/archive` API sets `payload = NULL` to save disk space. Verification holds because the `content_hash` remains stored intact.
 - **Topic 2 - Structured Redaction:** To comply with privacy laws (e.g., GDPR), the system supports structural redaction. Specific fields (e.g., `credit_card`) are saved as hashes in the primary log, and plaintexts in a side-table. The `POST /events/{hash}/redact/{field}` API permanently deletes the plaintext side-table row.
-- **Validation:** Both features were proven mathematically sound by `scripts/scenario_b.py`, which validates the chain before and after data deletion.
+- **Validation:** Both features were proven mathematically sound by `tests/scenario_b.py`, which validates the chain before and after data deletion.
 
 ### Scenario C: Ambiguous Compliance Reporting
 - **Requirement:** *"Regulators need to be able to audit access to client account data."*
