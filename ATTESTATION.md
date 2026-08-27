@@ -29,6 +29,6 @@ I have not reused any prior work or third-party code without permission. All cod
 ## Signature
 By signing below, I confirm that the information provided in this document is accurate and true.
 
-**Signature:** ___________________________  
+**Signature:** _Hardik Deshmukh_  
 **Printed Name:** Hardik Deshmukh  
 **Date:** 2026-08-27
