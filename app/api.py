@@ -20,14 +20,20 @@ crypto_service = CryptoService()
 security = HTTPBearer()
 API_TOKEN = os.environ.get("API_TOKEN", "supersecret")
 
-def verify_token(credentials: HTTPAuthorizationCredentials):
-    if credentials.credentials != API_TOKEN:
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    if token == API_TOKEN:
+        return {"role": "admin", "actor_id": "admin"}
+    elif token.endswith("-token"):
+        # Example: "user-123-token" -> actor_id = "user-123"
+        actor_id = token[:-6]
+        return {"role": "user", "actor_id": actor_id}
+    else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return credentials.credentials
 
 class EventCreateRequest(BaseModel):
     """
@@ -41,12 +47,13 @@ class EventCreateRequest(BaseModel):
     sensitiveFields: Optional[list[str]] = Field(None, json_schema_extra={"example": ["ssn"]}, description="List of keys in the payload to cryptographically erase later")
 
 @app.post("/events", status_code=201)
-def create_event(request: EventCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
+def create_event(request: EventCreateRequest, current_user: dict = Depends(get_current_user)):
     """
     Write API: Accepts an event record, calculates hashes, and stores it in the append-only log.
     """
-    # Verify Token
-    verify_token(credentials)
+    # Enforce RBAC: Users cannot spoof actorId
+    if current_user["role"] == "user":
+        request.actorId = current_user["actor_id"]
 
     # Convert Pydantic model to a raw dictionary
     event_dict = request.model_dump()
@@ -65,13 +72,17 @@ def query_events(
     from_time: Optional[float] = None,
     to_time: Optional[float] = None,
     limit: int = Query(50, ge=1, le=1000, description="Max number of records to return"),
-    offset: int = Query(0, ge=0, description="Number of records to skip")
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Query API: Retrieve events with optional filtering.
     """
     filters = {}
-    if actorId:
+    # Enforce RBAC: Users can only see their own events
+    if current_user["role"] == "user":
+        filters["actorId"] = current_user["actor_id"]
+    elif actorId:
         filters["actorId"] = actorId
     if resourceType:
         filters["resourceType"] = resourceType
@@ -97,11 +108,15 @@ def export_events(
     eventType: Optional[str] = None,
     from_time: Optional[float] = None,
     to_time: Optional[float] = None,
-    limit: int = Query(10000, ge=1, le=100000, description="Max number of records to export")
+    limit: int = Query(10000, ge=1, le=100000, description="Max number of records to export"),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Compliance Reporting API: Exports filtered events as a Cryptographically Signed JSON bundle.
     """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required to export events")
+
     filters = {}
     if actorId:
         filters["actorId"] = actorId
@@ -135,18 +150,22 @@ def export_events(
     }
 
 @app.get("/audit/verify")
-def verify_chain():
+def verify_chain(current_user: dict = Depends(get_current_user)):
     """
     Verification API: Walks the full chain and reports whether it is intact.
     """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required to verify chain")
     return service.verify_chain()
 
 @app.post("/events/{event_hash}/archive", status_code=200)
-def archive_event(event_hash: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+def archive_event(event_hash: str, current_user: dict = Depends(get_current_user)):
     """
     Retention Policy API: Soft-deletes the payload of an event.
     """
-    verify_token(credentials)
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required to archive events")
+    
     success = service.archive_event(event_hash)
     if not success:
         from fastapi import HTTPException
@@ -155,12 +174,14 @@ def archive_event(event_hash: str, credentials: HTTPAuthorizationCredentials = D
     return {"message": "Event archived successfully", "hash": event_hash}
 
 @app.post("/events/{event_hash}/redact/{field_name}", status_code=200)
-def redact_field(event_hash: str, field_name: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+def redact_field(event_hash: str, field_name: str, current_user: dict = Depends(get_current_user)):
     """
     Cryptographic Erasure API: Permanently deletes the plaintext value of a sensitive field.
     The hashed representation remains in the payload to keep the chain intact.
     """
-    verify_token(credentials)
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required to redact fields")
+    
     success = service.redact_field(event_hash, field_name)
     if not success:
         from fastapi import HTTPException
