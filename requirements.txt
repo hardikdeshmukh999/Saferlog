@@ -3,5 +3,6 @@ uvicorn
 pydantic
 cryptography
 httpx
-pytest
+pytest==9.1.1
+pytest-cov==7.1.0
 psycopg2-binary

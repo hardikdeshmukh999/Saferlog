@@ -34,7 +34,22 @@ pip install -r requirements.txt
 ```
 *(If `requirements.txt` is missing, run: `pip install fastapi uvicorn sqlite3 cryptography pytest requests`)*
 
-### 2. Running the API Server
+### 2. Required Environment Variables
+Because this application is production-hardened, you MUST supply these environment variables before the app will start. The app will intentionally crash if they are missing.
+
+```bash
+# Windows PowerShell
+$env:API_TOKEN="supersecret"
+$env:RSA_PASSPHRASE="test-passphrase"
+$env:DATA_ENCRYPTION_KEY="tG6jmLlzfdGkKF3Y0Qpb0wYUYSAc0jIo2smsT8_TxfQ="
+
+# macOS/Linux
+export API_TOKEN="supersecret"
+export RSA_PASSPHRASE="test-passphrase"
+export DATA_ENCRYPTION_KEY="tG6jmLlzfdGkKF3Y0Qpb0wYUYSAc0jIo2smsT8_TxfQ="
+```
+
+### 3. Running the API Server
 Start the FastAPI server using Uvicorn:
 ```bash
 uvicorn app.api:app --reload --port 8000
@@ -43,9 +58,9 @@ You can interact with the API directly through the automatically generated Swagg
 👉 **http://127.0.0.1:8000/docs**
 
 > [!IMPORTANT]
-> The API endpoints use **Zero-Trust HTTP Bearer Authentication**. To use the Swagger UI, click the green **"Authorize"** button and enter the default token: `supersecret`.
+> The API endpoints use **Zero-Trust HTTP Bearer Authentication with RBAC**. To use the Swagger UI, click the green **"Authorize"** button. To act as an Admin, enter the value you set in the `API_TOKEN` environment variable (e.g. `supersecret`). To act as a specific user, enter `user-A-token`.
 
-### 3. Running the Database (SQLite vs PostgreSQL)
+### 4. Running the Database (SQLite vs PostgreSQL)
 By default, the application runs on **SQLite** so you can test it instantly without setting up a database server. 
 
 If you want to test the enterprise **PostgreSQL** integration, spin up a local container:
@@ -61,7 +76,14 @@ $env:DATABASE_URL="postgresql://postgres:postgres@localhost:5432/saferlog"
 export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/saferlog"
 ```
 
-### 4. Testing the Application (Interactive Swagger UI)
+### 5. Running the Test Suite (pytest)
+This project features a comprehensive test suite. To run it and view the exact line-by-line coverage:
+```bash
+pytest --cov=app --cov-report=html tests/ -v
+```
+You can open `htmlcov/index.html` in your browser to view the physical HTML test coverage dashboard.
+
+### 6. Testing the Application (Interactive Swagger UI)
 You can manually test the API using the Swagger UI (`http://127.0.0.1:8000/docs`).
 
 **Optional: Seed the Database**
@@ -127,7 +149,9 @@ The schema contains two core tables:
 2. `sensitive_payloads`: A mutable side-table used for **Cryptographic Erasure**. When sensitive fields are ingested, they are stored here in plaintext, while their dynamically salted hashes are saved in the `events` table. 
 
 ### Security & Authentication
-The API enforces **Zero Trust** architecture. Write actions (creating events, redacting, archiving) are protected by a FastAPI `Depends` dependency that validates an `Authorization: Bearer <API_TOKEN>` header.
+The API enforces **Zero Trust** architecture. Write actions (creating events, redacting, archiving) are protected by a FastAPI `Depends` dependency that validates an `Authorization: Bearer` header. 
+- **Role-Based Access Control (RBAC):** Users providing tokens like `user-A-token` can only view and export their own data. Users providing the Admin `API_TOKEN` have unrestricted access and are the only ones allowed to run compliance tasks like Redaction.
+- **Database Encryption at Rest:** The `sensitive_payloads` table is protected by application-layer AES-GCM (`Fernet`) symmetric encryption. If the database is compromised, the sensitive data remains mathematically secure.
 
 ### Cryptographic Chain Design
 - **Hashing Algorithm:** `SHA-256` (via Python's `hashlib`). Chosen for its industry-standard security, speed, and collision resistance.
@@ -158,8 +182,9 @@ The API enforces **Zero Trust** architecture. Write actions (creating events, re
 ## Testing Approach, Limitations, and Trade-offs
 
 ### Testing Approach
-- **Unit Testing:** Used `pytest` to test low-level deterministic JSON canonicalization and hash generation logic (`tests/test_service.py`).
-- **Integration/E2E Testing:** Relied on programmatic python scripts (`scripts/scenario_*.py`) mimicking a live client interacting with the FastAPI endpoints (`TestClient` and `requests`), ensuring the entire lifecycle works continuously while passing the required `Bearer` authentication headers.
+- **Unit Testing:** Used `pytest` to test low-level deterministic JSON canonicalization and hash generation logic (`tests/test_service.py` and `tests/test_canonical.py`).
+- **Integration/E2E Testing:** We used `pytest` and FastAPI's `TestClient` to programmatically interact with the API endpoints across all three scenarios (`tests/scenario_*.py` and `tests/test_api.py`), ensuring the entire lifecycle works continuously while validating RBAC security.
+- **Coverage:** Verified via `pytest-cov`, proving high test density across the core application.
 
 ### Limitations & Trade-offs
 - **Linear Hash Chain vs. Merkle Tree:** I chose a simple linear hash chain. It is easier to implement and perfectly tamper-evident. The trade-off is that you cannot mathematically verify a subset of data (like a Merkle Proof allows). We mitigated this limitation in Scenario C by using RSA signatures for exports instead.
@@ -172,6 +197,45 @@ If this were deployed to production tomorrow, the following upgrades (which were
 3. **Dynamic Cryptographic Salting:** Redaction does not use a global static pepper. Instead, a unique 16-byte cryptographic salt (`os.urandom(16).hex()`) is generated for *every single sensitive field* and embedded in the deterministic JSON payload to thwart Rainbow Table attacks.
 
 ---
+
+## Align Claims with Readiness
+This prototype was designed with a clear path to production readiness. The following architectural decisions align the prototype with enterprise standards:
+- **Zero-Trust Access:** A globally enforced HTTP Bearer token strategy (RBAC) ensures that actors can only access their own data, and sensitive compliance endpoints (e.g. `/redact`, `/archive`) are restricted to administrators.
+- **Data-at-Rest Security:** The `sensitive_payloads` table uses application-layer symmetric encryption (AES-GCM via `Fernet`), meaning a raw database dump yields no readable sensitive information.
+- **Fail-Fast Initialization:** The system refuses to boot if cryptographic secrets (`API_TOKEN`, `RSA_PASSPHRASE`, `DATA_ENCRYPTION_KEY`) are not provided via environment variables, preventing accidental deployment with weak or default keys.
+
+## Ambiguity & Assumptions Log
+During **Scenario C (Compliance Reporting)**, the requirement stated: *"Regulators need to be able to audit access to client account data."*
+This was intentionally ambiguous. I made the following assumptions and design decisions:
+- **Ambiguity:** How does the regulator verify the data without direct access to the live hash chain?
+- **Assumption:** Regulators require offline, point-in-time verification of a non-contiguous subset of events (e.g., only events for `user-A`).
+- **Resolution:** A linear hash chain cannot mathematically verify non-contiguous subsets. Therefore, I scoped out Merkle proofs (which are highly complex) and instead implemented a **Cryptographically Signed JSON Bundle**. The API exports the subset and signs the payload with the server's private RSA key. The regulator uses a standalone script to verify the RSA signature using the server's public key.
+
+During **Scenario B (Structured Redaction)**, the requirement stated that certain fields must be redactable:
+- **Ambiguity:** How does the audit log service know *which* fields within the arbitrary JSON payload are sensitive and require cryptographic erasure support?
+- **Assumption:** The service should not rely on deep packet inspection, hardcoded schemas, or NLP to guess which fields are sensitive.
+- **Resolution:** I designed the API contract (`POST /events`) to explicitly accept a `sensitiveFields` array. The upstream client application is responsible for declaring exactly which keys in the payload require cryptographic salting at the time of ingestion.
+
+## Failure Matrix & Non-Functional Targets
+
+| Failure Mode | Mitigation Strategy | Non-Functional Target |
+|---|---|---|
+| **Memory Exhaustion (OOM)** | The `/audit/verify` endpoint uses PostgreSQL server-side cursors (`yield`) to stream the hash chain in chunks of 1,000, avoiding memory bloat on large datasets. | **Scalability / Reliability** |
+| **Rainbow Table Attacks** | Each redacted field generates a unique 16-byte cryptographic salt before hashing. | **Security (Data Privacy)** |
+| **Database Write Contention** | Default SQLite fallback is replaced by PostgreSQL when `DATABASE_URL` is provided, preventing `database is locked` errors during high-throughput writes. | **Performance / Concurrency** |
+| **Compromised Database (Data Theft)** | The `sensitive_payloads` table uses application-layer AES-GCM encryption. The encryption key is injected securely via CI/CD, never stored in the database. | **Security (Data at Rest)** |
+| **Unauthorized Data Access** | Hardcoded fallback tokens were removed. RBAC physically filters queries so `user-A` cannot query `user-B`'s audit logs. | **Security (Zero Trust)** |
+
+### Future Non-Functional Upgrades (V1)
+To elevate this prototype to full enterprise-grade maturity, the following non-functional safeguards must be implemented before a V1 release:
+- **API Gateway:** For DDoS protection and strict Rate Limiting.
+- **Payload Size Limits:** To prevent abuse and memory exhaustion during JSON parsing.
+- **Idempotency Keys:** To prevent duplicate event creation during network retries.
+- **Keyset Pagination:** Upgrading from offset pagination to cursor-based pagination for faster deep database reads.
+- **Event Streaming (Kafka/RabbitMQ):** Decoupling the ingestion API from the database write-path using a message broker to handle massive traffic spikes asynchronously.
+
+---
+
 
 ## Final Engineering Summary
 

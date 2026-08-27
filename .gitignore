@@ -22,3 +22,9 @@ keys/
 
 # Temporary Exports
 *.json
+
+# Proprietary Documents
+docs/
+
+# Testing
+.coverage

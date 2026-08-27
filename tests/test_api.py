@@ -121,8 +121,13 @@ def test_verify_chain_broken():
     event_to_tamper = events[0]
     
     with storage._get_connection() as conn:
-        conn.execute("UPDATE events SET payload = ? WHERE hash = ?", ('{"tampered": true}', event_to_tamper["hash"]))
-        conn.commit()
+        if hasattr(conn, "cursor"):
+            with conn.cursor() as cur:
+                cur.execute("UPDATE events SET payload = %s WHERE hash = %s", ('{"tampered": true}', event_to_tamper["hash"]))
+            conn.commit()
+        else:
+            conn.execute("UPDATE events SET payload = ? WHERE hash = ?", ('{"tampered": true}', event_to_tamper["hash"]))
+            conn.commit()
         
     response = client.get("/audit/verify")
     data = response.json()
