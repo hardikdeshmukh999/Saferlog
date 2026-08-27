@@ -1,7 +1,14 @@
 import sqlite3
 import json
+import os
+from cryptography.fernet import Fernet
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
+
+DATA_ENCRYPTION_KEY = os.environ.get("DATA_ENCRYPTION_KEY")
+if not DATA_ENCRYPTION_KEY:
+    raise RuntimeError("DATA_ENCRYPTION_KEY environment variable is required")
+fernet = Fernet(DATA_ENCRYPTION_KEY.encode('utf-8'))
 
 class StorageProvider(ABC):
     @abstractmethod
@@ -211,10 +218,11 @@ class SQLiteStorage(StorageProvider):
             
         with self._get_connection() as conn:
             for field, value in sensitive_fields.items():
+                encrypted_value = fernet.encrypt(json.dumps(value).encode('utf-8')).decode('utf-8')
                 conn.execute('''
                     INSERT INTO sensitive_payloads (event_hash, field_name, field_value)
                     VALUES (?, ?, ?)
-                ''', (event_hash, field, json.dumps(value)))
+                ''', (event_hash, field, encrypted_value))
             conn.commit()
 
     def redact_field(self, event_hash: str, field_name: str) -> bool:
@@ -236,7 +244,7 @@ class SQLiteStorage(StorageProvider):
         """
         with self._get_connection() as conn:
             cursor = conn.execute('SELECT field_name, field_value FROM sensitive_payloads WHERE event_hash = ?', (event_hash,))
-            return {row["field_name"]: json.loads(row["field_value"]) for row in cursor.fetchall()}
+            return {row["field_name"]: json.loads(fernet.decrypt(row["field_value"].encode('utf-8')).decode('utf-8')) for row in cursor.fetchall()}
 
 class PostgresStorage(StorageProvider):
     def __init__(self, db_url: str):
@@ -406,10 +414,11 @@ class PostgresStorage(StorageProvider):
         with self._get_connection() as conn:
             with conn.cursor() as cursor:
                 for field, value in sensitive_fields.items():
+                    encrypted_value = fernet.encrypt(json.dumps(value).encode('utf-8')).decode('utf-8')
                     cursor.execute('''
                         INSERT INTO sensitive_payloads (event_hash, field_name, field_value)
                         VALUES (%s, %s, %s)
-                    ''', (event_hash, field, json.dumps(value)))
+                    ''', (event_hash, field, encrypted_value))
             conn.commit()
 
     def redact_field(self, event_hash: str, field_name: str) -> bool:
@@ -427,7 +436,7 @@ class PostgresStorage(StorageProvider):
         with self._get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute('SELECT field_name, field_value FROM sensitive_payloads WHERE event_hash = %s', (event_hash,))
-                return {row["field_name"]: json.loads(row["field_value"]) for row in cursor.fetchall()}
+                return {row["field_name"]: json.loads(fernet.decrypt(row["field_value"].encode('utf-8')).decode('utf-8')) for row in cursor.fetchall()}
 
 def get_storage() -> StorageProvider:
     import os

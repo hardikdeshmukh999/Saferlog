@@ -2,6 +2,7 @@ import pytest
 import os
 os.environ["API_TOKEN"] = "supersecret"
 os.environ["RSA_PASSPHRASE"] = "test-passphrase"
+os.environ["DATA_ENCRYPTION_KEY"] = "tG6jmLlzfdGkKF3Y0Qpb0wYUYSAc0jIo2smsT8_TxfQ="
 
 from fastapi.testclient import TestClient
 from app.api import app, storage
