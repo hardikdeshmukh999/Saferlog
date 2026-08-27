@@ -7,6 +7,10 @@ KEYS_DIR = "keys"
 PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "system_private.pem")
 PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "system_public.pem")
 
+RSA_PASSPHRASE = os.environ.get("RSA_PASSPHRASE")
+if not RSA_PASSPHRASE:
+    raise RuntimeError("RSA_PASSPHRASE environment variable is required")
+
 class CryptoService:
     def __init__(self):
         self._ensure_keys_exist()
@@ -29,7 +33,7 @@ class CryptoService:
                 f.write(private_key.private_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PrivateFormat.PKCS8,
-                    encryption_algorithm=serialization.NoEncryption()
+                    encryption_algorithm=serialization.BestAvailableEncryption(RSA_PASSPHRASE.encode('utf-8'))
                 ))
                 
             # Save Public Key
@@ -44,7 +48,7 @@ class CryptoService:
         with open(PRIVATE_KEY_PATH, "rb") as f:
             return serialization.load_pem_private_key(
                 f.read(),
-                password=None,
+                password=RSA_PASSPHRASE.encode('utf-8'),
             )
             
     def _load_public_key_pem(self) -> str:

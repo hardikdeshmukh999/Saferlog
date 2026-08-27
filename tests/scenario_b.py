@@ -1,5 +1,8 @@
 import sys
 sys.path.insert(0, ".")
+import os
+os.environ["API_TOKEN"] = "supersecret"
+os.environ["RSA_PASSPHRASE"] = "test-passphrase"
 from fastapi.testclient import TestClient
 from app.api import app
 from app.api import storage
