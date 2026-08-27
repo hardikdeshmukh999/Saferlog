@@ -1,10 +1,12 @@
 import pytest
-from fastapi.testclient import TestClient
+import os
 
+os.environ["API_TOKEN"] = "supersecret"
+
+from fastapi.testclient import TestClient
 from app.api import app, storage
 
-# A test client lets us simulate HTTP requests to our FastAPI app
-client = TestClient(app)
+client = TestClient(app, headers={"Authorization": "Bearer supersecret"})
 
 @pytest.fixture(autouse=True)
 def clean_database():

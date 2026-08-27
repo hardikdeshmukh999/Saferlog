@@ -18,7 +18,9 @@ crypto_service = CryptoService()
 
 # Authentication Setup
 security = HTTPBearer()
-API_TOKEN = os.environ.get("API_TOKEN", "supersecret")
+API_TOKEN = os.environ.get("API_TOKEN")
+if not API_TOKEN:
+    raise RuntimeError("API_TOKEN environment variable is required")
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
