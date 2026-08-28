@@ -5,8 +5,8 @@
 - **Dates:** 2026-08-25 to 2026-08-27
 - **Submission Date:** 2026-08-27
 - **Private GitHub Repository URL:** https://github.com/hardikdeshmukh999/Saferlog
-- **Branch Name:** master
-- **Final Commit SHA:** f5a2a2a78305de2ae86f965a63792d44a4f3a297
+- **Repository branch:** `master`
+- **Reviewed commit SHA (Version 2):** `89794afa5083a7d981cee615c9292f997a9edaa1`
 
 I, Hardik Deshmukh, attest that this submission is my own individual work, completed on my own
 machine and accounts, and that it honestly reflects my development process and use of AI.
