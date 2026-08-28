@@ -9,11 +9,19 @@ try:
 except requests.exceptions.ConnectionError:
     API_URL = "http://127.0.0.1:8001"
 
+# Fetch JWT Token
+try:
+    auth_res = requests.post(f"{API_URL}/auth/token", data={"username": "admin", "password": "supersecret"})
+    auth_res.raise_for_status()
+    token = auth_res.json()["access_token"]
+except Exception as e:
+    print(f"Failed to authenticate. Is the server running with API_TOKEN='supersecret'? Error: {e}")
+    exit(1)
+
 HEADERS = {
     "Content-Type": "application/json",
-    "Authorization": "Bearer supersecret"
+    "Authorization": f"Bearer {token}"
 }
-
 events_to_seed = [
     {
         "eventType": "USER_LOGIN",

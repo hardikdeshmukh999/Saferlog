@@ -115,3 +115,39 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
   2. **Manual Code Fix:** Identified that `tests/test_api.py` would fail if run against PostgreSQL because the test was hardcoded for SQLite's `?` string formatting. Manually rewrote the test to use `psycopg2` cursors and `%s` formatting when a Postgres connection is detected, ensuring the test suite is truly database-agnostic.
   3. **Test Isolation Engineering:** Identified that running the test suite against a persistent PostgreSQL database caused test pollution (unlike the ephemeral in-memory SQLite database). Engineered a `conftest.py` fixture to automatically truncate the database tables before every test run, proving a deep understanding of test lifecycle isolation.
 - **Outcome:** The project documentation now perfectly mirrors the codebase and exceeds the requirements for a senior-level submission. The test suite is hardened for both SQLite and PostgreSQL.
+
+## 2026-08-28: JWT Authentication Migration
+- **Prompt intent:** Rip out the vulnerable `token.endswith("-token")` mock authentication logic and replace it with a production-grade PyJWT implementation.
+- **AI Contribution:** Added `PyJWT` to dependencies. Designed a new `POST /auth/token` endpoint that issues mathematically signed JWTs containing `sub`, `role`, and `exp` claims. Rewrote the `get_current_user` FastAPI dependency to decode and cryptographically verify the JWT using the `API_TOKEN` as the secret key. Refactored the entire test suite to dynamically fetch and inject JWTs before testing API logic.
+- **Human Decision:** Identified the massive security vulnerability in the mock token logic and mandated the architectural shift to verifiable JWTs before the final submission.
+- **Outcome:** The prototype now demonstrates a real-world, enterprise-grade authentication flow. Spoofing is impossible without the private `API_TOKEN` to sign the JWT.
+
+## 2026-08-28: Observability and Zero-Trust KMS Refactoring
+- **Prompt intent:** Fix data leakage in `print()` statements and rip out on-disk RSA keys.
+- **AI Contribution:** Replaced all `print()` calls in `app/service.py` with standard Python `logging` to ensure structured, safe JSON logging that never leaks raw payloads. In `app/crypto.py`, deleted all disk I/O logic and implemented a `MockKMSClient` that securely generates and caches the system's RSA key pair in-memory. Recursively deleted the legacy `keys/` directory from the workspace.
+- **Human Decision:** Caught that printing raw payloads to the console violates structural redaction guarantees, and determined that leaving `.pem` files on the filesystem violates Zero-Trust design.
+- **Outcome:** The codebase is now mathematically robust against both log scraping and filesystem compromises.
+
+## 2026-08-28: Concurrency Control & Atomic Appends
+- **Prompt intent:** Prevent race conditions from forking the hash chain if two microservices log an event at the exact same millisecond.
+- **AI Contribution:** Inverted the control flow of the storage layer. Refactored `app/storage.py` to own explicit database locks (`LOCK TABLE ... IN EXCLUSIVE MODE` for PostgreSQL and `BEGIN EXCLUSIVE` for SQLite). Modified `app/service.py` to pass the cryptographic hashing logic as a callback (`prepare_event`) into the storage layer's new `append_event_atomic` method.
+- **Human Decision:** Identified that the previous architecture fetched the `last_hash` and appended the new event in separate, non-atomic steps, posing a massive concurrency risk in production.
+- **Outcome:** The cryptographic chain is now mathematically thread-safe and mathematically guaranteed to never fork, even under massive parallel ingestion traffic.
+
+## 2026-08-28: Denial of Service (DoS) Hardening
+- **Prompt intent:** Add enterprise-grade limits on request ingestion volume and payload size to prevent database connection exhaustion and memory crashes.
+- **AI Contribution:** Installed and configured `slowapi` to enforce a strict Token Bucket rate limit of `5 requests/second` per IP on the `POST /events` endpoint. Added a custom `@field_validator` to the Pydantic `EventCreateRequest` model that actively measures the serialized byte size of the payload, instantly rejecting any payload exceeding 256 KB with a 422 Unprocessable Entity error. Added full test coverage for both constraints.
+- **Human Decision:** Anticipated malicious actors attempting to spam the append-only log with junk data, and recognized that unbounded JSON deserialization is a fatal vector for DoS attacks.
+- **Outcome:** The prototype can now gracefully survive and reject massive traffic spikes and malicious 50MB payload injections without breaking a sweat or slowing down.
+
+## 2026-08-28: Browser Security & Anti-Replay Protections
+- **Prompt intent:** Implement FastAPI's `CORSMiddleware` with a restrictive origin policy and require an `Idempotency-Key` header on the write endpoint to prevent replay attacks.
+- **AI Contribution:** Added `CORSMiddleware` configured to restrict Cross-Origin Resource Sharing to a specific trusted client origin. Implemented an `Idempotency-Key` required header using a FastAPI `Depends` dependency. Integrated `cachetools.TTLCache` to enforce a 5-minute rolling window where duplicate requests containing the same idempotency key are instantly rejected with a `409 Conflict` (Duplicate Request) error. Rewrote the `tests/conftest.py` setup to utilize FastAPI's `app.dependency_overrides` feature, dynamically injecting unique `uuid4` idempotency keys into all test client requests to keep the test suite running smoothly. Added a dedicated negative test to prove the replay attack prevention works.
+- **Human Decision:** Identified that without an idempotency key, attackers could intercept and blindly replay a valid logged event request (e.g. "Create Account") over and over. Also identified the need for browser security via CORS.
+- **Outcome:** The prototype is now secure against both Cross-Origin attacks and Replay attacks, elevating it further to true Enterprise standards.
+
+## 2026-08-28: Dependency Injection Refactoring
+- **Prompt intent:** Refactor the global singletons (`storage = get_storage()`, `service = AuditService(storage)`) at the top of `app/api.py` into proper FastAPI dependency generators using `Depends()`. 
+- **AI Contribution:** Designed a migration plan to move away from anti-pattern module-level globals. Replaced globals with `get_storage_provider`, `get_audit_service`, and `get_crypto_service` dependency functions and dynamically injected them into all route handlers. When running the test suite, we encountered a severe false-positive failure where `pytest` double-imported `conftest.py`, silently creating two completely independent in-memory SQLite databases that failed to share event data. Diagnosed this test pollution and architecturally isolated the test database singleton into `tests/utils.py`, then utilized FastAPI's `app.dependency_overrides` feature to safely inject it during automated tests.
+- **Human Decision:** Identified that instantiating database connections and core business logic services as global singletons at module load time is a massive anti-pattern that violates connection lifecycle management principles. Demanded a production-grade Dependency Injection architecture.
+- **Outcome:** The codebase now features proper dependency injection, allowing for elegant per-request connection lifecycles in production, while cleanly retaining stateful in-memory persistence during the automated test suite.

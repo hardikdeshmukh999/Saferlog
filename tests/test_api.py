@@ -6,9 +6,13 @@ os.environ["RSA_PASSPHRASE"] = "test-passphrase"
 os.environ["DATA_ENCRYPTION_KEY"] = "tG6jmLlzfdGkKF3Y0Qpb0wYUYSAc0jIo2smsT8_TxfQ="
 
 from fastapi.testclient import TestClient
-from app.api import app, storage
+from app.api import app
+from tests.utils import test_storage as storage
 
-client = TestClient(app, headers={"Authorization": "Bearer supersecret"})
+anon_client = TestClient(app)
+res_admin = anon_client.post("/auth/token", data={"username": "admin", "password": "supersecret"})
+admin_token = res_admin.json()["access_token"]
+client = TestClient(app, headers={"Authorization": f"Bearer {admin_token}"})
 
 @pytest.fixture(autouse=True)
 def clean_database():
@@ -23,6 +27,11 @@ def clean_database():
     storage._conn = sqlite3.connect(":memory:", check_same_thread=False)
     storage._conn.row_factory = sqlite3.Row
     storage._init_db()
+    
+    # Disable the rate limiter so tests don't hit the 5/sec limit
+    from app.api import app
+    app.state.limiter.enabled = False
+    
     yield
 
 def test_create_event():
@@ -121,7 +130,7 @@ def test_verify_chain_broken():
     event_to_tamper = events[0]
     
     with storage._get_connection() as conn:
-        if hasattr(conn, "cursor"):
+        if type(storage).__name__ == "PostgresStorage":
             with conn.cursor() as cur:
                 cur.execute("UPDATE events SET payload = %s WHERE hash = %s", ('{"tampered": true}', event_to_tamper["hash"]))
             conn.commit()
@@ -190,4 +199,49 @@ def test_structured_redaction():
     # 6. Verify chain is STILL intact
     verify_response2 = client.get('/audit/verify')
     assert verify_response2.json()['isValid'] is True
+
+
+def test_rate_limit_dos_protection():
+    # Enable the limiter specifically for this test
+    from app.api import app
+    app.state.limiter.enabled = True
+    
+    # Hit the /events endpoint 6 times in rapid succession
+    # The limit is 5/second
+    for i in range(5):
+        res = client.post("/events", json={
+            "eventType": "SPAM",
+            "actorId": "admin",
+            "resourceType": "App",
+            "resourceId": "app-1",
+            "payload": {}
+        })
+        assert res.status_code == 201
+        
+    # The 6th request should fail with 429 Too Many Requests
+    res = client.post("/events", json={
+        "eventType": "SPAM",
+        "actorId": "admin",
+        "resourceType": "App",
+        "resourceId": "app-1",
+        "payload": {}
+    })
+    assert res.status_code == 429
+    assert "Rate limit exceeded" in res.json()["error"]
+
+
+def test_payload_size_limit():
+    # Construct a massive payload (> 256KB)
+    massive_payload = {"key": "A" * 300_000}
+    
+    res = client.post("/events", json={
+        "eventType": "MASSIVE_UPLOAD",
+        "actorId": "admin",
+        "resourceType": "App",
+        "resourceId": "app-1",
+        "payload": massive_payload
+    })
+    
+    assert res.status_code == 422
+    assert "Payload size exceeds the 256KB strict limit" in res.text
 

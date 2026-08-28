@@ -5,16 +5,21 @@ os.environ["RSA_PASSPHRASE"] = "test-passphrase"
 os.environ["DATA_ENCRYPTION_KEY"] = "tG6jmLlzfdGkKF3Y0Qpb0wYUYSAc0jIo2smsT8_TxfQ="
 
 from fastapi.testclient import TestClient
-from app.api import app, storage
-
-# Default client is admin
-admin_client = TestClient(app, headers={"Authorization": "Bearer supersecret"})
-
-# User client
-user_client = TestClient(app, headers={"Authorization": "Bearer user-A-token"})
+from app.api import app
+from tests.utils import test_storage as storage
 
 # Unauthenticated client
 anon_client = TestClient(app)
+
+# Fetch Admin Token
+res_admin = anon_client.post("/auth/token", data={"username": "admin", "password": "supersecret"})
+admin_token = res_admin.json()["access_token"]
+admin_client = TestClient(app, headers={"Authorization": f"Bearer {admin_token}"})
+
+# Fetch User Token
+res_user = anon_client.post("/auth/token", data={"username": "user-A", "password": "password"})
+user_token = res_user.json()["access_token"]
+user_client = TestClient(app, headers={"Authorization": f"Bearer {user_token}"})
 
 
 @pytest.fixture(autouse=True)

@@ -1,9 +1,13 @@
 from datetime import datetime, timezone
 from typing import Dict, Any
+import logging
 
 from app.storage import StorageProvider
 from app.canonical import canonical
 from app.chain import content_hash, record_hash
+
+logger = logging.getLogger("saferlog")
+logger.setLevel(logging.INFO)
 
 class AuditService:
     def __init__(self, storage: StorageProvider):
@@ -23,7 +27,8 @@ class AuditService:
         sensitive_fields = event_data.pop("sensitiveFields", None)
         extracted_sensitive_data = {}
         
-        print(f"DEBUG: sensitive_fields={sensitive_fields}, payload={event_data.get('payload')}")
+        if sensitive_fields:
+            logger.debug("Processing event with sensitive fields: %s", sensitive_fields)
         
         if sensitive_fields and "payload" in event_data:
             import hashlib
@@ -41,35 +46,28 @@ class AuditService:
                     hashed_val = hashlib.sha256(salted_val.encode('utf-8')).hexdigest()
                     # Securely embed the salt in the deterministic payload structure
                     payload[field] = f"REDACTED:{salt}:{hashed_val}"
-        
-        last_event = self.storage.get_last_event()
-        last_hash = last_event["hash"] if last_event else self.GENESIS_HASH
-            
-        # 3. Get the deterministic bytes of the event
-        c_hash = content_hash(canonical(event_data))
-        r_hash = record_hash(last_hash, c_hash)
+                    
+        def prepare_event(last_hash: str):
+            # Get the deterministic bytes of the event
+            c_hash = content_hash(canonical(event_data))
+            r_hash = record_hash(last_hash, c_hash)
 
-        event_data = {
-            "eventType": event_data["eventType"],
-            "actorId": event_data["actorId"],
-            "resourceType": event_data["resourceType"],
-            "resourceId": event_data["resourceId"],
-            "payload": event_data.get("payload", {}),
-            "timestamp": event_data.get("timestamp"),
-            "previousHash": last_hash,
-            "content_hash": c_hash,
-            "hash": r_hash,
-            "is_archived": 0
-        }
-        
-        # 5. Save to the database
-        self.storage.append_event(event_data)
-        
-        # 6. Save sensitive plaintext values separately
-        if extracted_sensitive_data:
-            self.storage.save_sensitive_fields(r_hash, extracted_sensitive_data)
-            
-        return event_data
+            final_event = {
+                "eventType": event_data["eventType"],
+                "actorId": event_data["actorId"],
+                "resourceType": event_data["resourceType"],
+                "resourceId": event_data["resourceId"],
+                "payload": event_data.get("payload", {}),
+                "timestamp": event_data.get("timestamp"),
+                "previousHash": last_hash,
+                "content_hash": c_hash,
+                "hash": r_hash,
+                "is_archived": 0
+            }
+            return final_event, extracted_sensitive_data
+
+        # Save to the database using an explicit transactional lock
+        return self.storage.append_event_atomic(prepare_event)
 
     def redact_field(self, event_hash: str, field_name: str) -> bool:
         return self.storage.redact_field(event_hash, field_name)

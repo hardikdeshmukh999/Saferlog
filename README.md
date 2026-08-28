@@ -58,7 +58,11 @@ You can interact with the API directly through the automatically generated Swagg
 👉 **http://127.0.0.1:8000/docs**
 
 > [!IMPORTANT]
-> The API endpoints use **Zero-Trust HTTP Bearer Authentication with RBAC**. To use the Swagger UI, click the green **"Authorize"** button. To act as an Admin, enter the value you set in the `API_TOKEN` environment variable (e.g. `supersecret`). To act as a specific user, enter `user-A-token`.
+> The API endpoints use **Zero-Trust HTTP Bearer Authentication with PyJWT**. To use the Swagger UI, first go to the `POST /auth/token` endpoint. 
+> - **For Admin Access:** Click **Try it out**, enter `admin` for username, and the value of your `API_TOKEN` environment variable (e.g. `supersecret`) for password. Click **Execute**.
+> - **For User Access:** Enter `user-A` for username, and `password` for password. Click **Execute**.
+> 
+> Finally, copy the `access_token` from the response, scroll to the top, click the green **Authorize** button, and paste the token into the Value box.
 
 ### 4. Running the Database (SQLite vs PostgreSQL)
 By default, the application runs on **SQLite** so you can test it instantly without setting up a database server. 
@@ -146,11 +150,12 @@ The system uses a **Storage Factory Pattern** (`get_storage()`). By default, it 
 
 The schema contains two core tables:
 1. `events`: The immutable, append-only log. It stores the `hash`, `previousHash`, and `content_hash` of each event, along with the `payload` (if not archived) and metadata.
-2. `sensitive_payloads`: A mutable side-table used for **Cryptographic Erasure**. When sensitive fields are ingested, they are stored here in plaintext, while their dynamically salted hashes are saved in the `events` table. 
+2. `sensitive_payloads`: A mutable side-table used for **Cryptographic Erasure**. When sensitive fields are ingested, they are stored here encrypted at rest via AES-GCM (Fernet), while their dynamically salted hashes are saved in the `events` table. 
 
 ### Security & Authentication
 The API enforces **Zero Trust** architecture. Write actions (creating events, redacting, archiving) are protected by a FastAPI `Depends` dependency that validates an `Authorization: Bearer` header. 
-- **Role-Based Access Control (RBAC):** Users providing tokens like `user-A-token` can only view and export their own data. Users providing the Admin `API_TOKEN` have unrestricted access and are the only ones allowed to run compliance tasks like Redaction.
+- **PyJWT Authentication:** The system uses mathematically verifiable JSON Web Tokens (`PyJWT`) with a 1-hour expiration claim (`exp`). Tokens are dynamically issued by the `/auth/token` endpoint and mathematically signed using the `API_TOKEN` as the secret key.
+- **Role-Based Access Control (RBAC):** Users providing tokens with the `user` role can only view and export their own data. Users providing tokens with the `admin` role have unrestricted access and are the only ones allowed to run compliance tasks like Redaction.
 - **Database Encryption at Rest:** The `sensitive_payloads` table is protected by application-layer AES-GCM (`Fernet`) symmetric encryption. If the database is compromised, the sensitive data remains mathematically secure.
 
 ### Cryptographic Chain Design
@@ -169,7 +174,7 @@ The API enforces **Zero Trust** architecture. Write actions (creating events, re
 
 ### Scenario B: Extend Your Own System
 - **Topic 1 - Retention Policy (Archiving):** The `POST /events/{hash}/archive` API sets `payload = NULL` to save disk space. Verification holds because the `content_hash` remains stored intact.
-- **Topic 2 - Structured Redaction:** To comply with privacy laws (e.g., GDPR), the system supports structural redaction. Specific fields (e.g., `credit_card`) are saved as hashes in the primary log, and plaintexts in a side-table. The `POST /events/{hash}/redact/{field}` API permanently deletes the plaintext side-table row.
+- **Topic 2 - Structured Redaction:** To comply with privacy laws (e.g., GDPR), the system supports structural redaction. Specific fields (e.g., `credit_card`) are saved as hashes in the primary log, and their encrypted values in a side-table. The `POST /events/{hash}/redact/{field}` API permanently deletes the encrypted side-table row.
 - **Validation:** Both features were proven mathematically sound by `tests/scenario_b.py`, which validates the chain before and after data deletion.
 
 ### Scenario C: Ambiguous Compliance Reporting

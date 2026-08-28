@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import os
+import threading
 from cryptography.fernet import Fernet
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
@@ -13,6 +14,11 @@ fernet = Fernet(DATA_ENCRYPTION_KEY.encode('utf-8'))
 class StorageProvider(ABC):
     @abstractmethod
     def append_event(self, event: Dict[str, Any]) -> None:
+        pass
+        
+    @abstractmethod
+    def append_event_atomic(self, prepare_event_func) -> Dict[str, Any]:
+        """Executes a strictly thread-safe, mutually exclusive event append."""
         pass
 
     @abstractmethod
@@ -36,8 +42,9 @@ class SQLiteStorage(StorageProvider):
     def __init__(self, db_path: str = "saferlog.db"):
         self.db_path = db_path
         # Use check_same_thread=False for easy testing and async usage later.
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=15.0)
         self._conn.row_factory = sqlite3.Row
+        self._lock = threading.Lock()
         self._init_db()
 
     def _get_connection(self):
@@ -98,6 +105,55 @@ class SQLiteStorage(StorageProvider):
                 event_dict.get("is_archived", 0)
             ))
             conn.commit()
+
+    def append_event_atomic(self, prepare_event_func) -> Dict[str, Any]:
+        with self._lock:
+            conn = self._get_connection()
+            old_iso = conn.isolation_level
+            conn.isolation_level = None  # Disable auto-transactions to manually enforce EXCLUSIVE lock
+            try:
+                conn.execute("BEGIN EXCLUSIVE")
+                try:
+                    cursor = conn.execute('SELECT * FROM events ORDER BY id DESC LIMIT 1')
+                    row = cursor.fetchone()
+                    last_event = self._row_to_dict(row) if row else None
+                    last_hash = last_event["hash"] if last_event else "0000000000000000000000000000000000000000000000000000000000000000"
+                    
+                    event_dict, sensitive_fields = prepare_event_func(last_hash)
+                    
+                    conn.execute('''
+                        INSERT INTO events (
+                            event_type, actor_id, resource_type, resource_id, 
+                            timestamp, hash, previous_hash, content_hash, payload, is_archived
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        event_dict["eventType"],
+                        event_dict["actorId"],
+                        event_dict["resourceType"],
+                        event_dict["resourceId"],
+                        event_dict["timestamp"],
+                        event_dict["hash"],
+                        event_dict["previousHash"],
+                        event_dict["content_hash"],
+                        json.dumps(event_dict.get("payload", {})) if event_dict.get("payload") is not None else None,
+                        event_dict.get("is_archived", 0)
+                    ))
+                    
+                    if sensitive_fields:
+                        for field, value in sensitive_fields.items():
+                            encrypted_value = fernet.encrypt(json.dumps(value).encode('utf-8')).decode('utf-8')
+                            conn.execute('''
+                                INSERT INTO sensitive_payloads (event_hash, field_name, field_value)
+                                VALUES (?, ?, ?)
+                            ''', (event_dict["hash"], field, encrypted_value))
+                            
+                    conn.execute("COMMIT")
+                    return event_dict
+                except Exception:
+                    conn.execute("ROLLBACK")
+                    raise
+            finally:
+                conn.isolation_level = old_iso
 
     def get_last_event(self) -> Optional[Dict[str, Any]]:
         with self._get_connection() as conn:
@@ -314,6 +370,48 @@ class PostgresStorage(StorageProvider):
                     event_dict.get("is_archived", 0)
                 ))
             conn.commit()
+
+    def append_event_atomic(self, prepare_event_func) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cursor:
+                # Explicit database-level table lock to prevent concurrent appends from forking the chain
+                cursor.execute("LOCK TABLE events IN EXCLUSIVE MODE")
+                
+                cursor.execute('SELECT * FROM events ORDER BY id DESC LIMIT 1')
+                row = cursor.fetchone()
+                last_event = self._row_to_dict(row) if row else None
+                last_hash = last_event["hash"] if last_event else "0000000000000000000000000000000000000000000000000000000000000000"
+                
+                event_dict, sensitive_fields = prepare_event_func(last_hash)
+                
+                cursor.execute('''
+                    INSERT INTO events (
+                        event_type, actor_id, resource_type, resource_id, 
+                        timestamp, hash, previous_hash, content_hash, payload, is_archived
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    event_dict["eventType"],
+                    event_dict["actorId"],
+                    event_dict["resourceType"],
+                    event_dict["resourceId"],
+                    event_dict["timestamp"],
+                    event_dict["hash"],
+                    event_dict["previousHash"],
+                    event_dict["content_hash"],
+                    json.dumps(event_dict.get("payload", {})) if event_dict.get("payload") is not None else None,
+                    event_dict.get("is_archived", 0)
+                ))
+                
+                if sensitive_fields:
+                    for field, value in sensitive_fields.items():
+                        encrypted_value = fernet.encrypt(json.dumps(value).encode('utf-8')).decode('utf-8')
+                        cursor.execute('''
+                            INSERT INTO sensitive_payloads (event_hash, field_name, field_value)
+                            VALUES (%s, %s, %s)
+                        ''', (event_dict["hash"], field, encrypted_value))
+                        
+            conn.commit()
+            return event_dict
 
     def get_last_event(self) -> Optional[Dict[str, Any]]:
         with self._get_connection() as conn:

@@ -11,7 +11,10 @@ from app.api import app
 from fastapi.testclient import TestClient
 from verify_export import verify_export_bundle
 
-client = TestClient(app, headers={"Authorization": "Bearer supersecret"})
+anon_client = TestClient(app)
+res = anon_client.post("/auth/token", data={"username": "admin", "password": "supersecret"})
+admin_token = res.json()["access_token"]
+client = TestClient(app, headers={"Authorization": f"Bearer {admin_token}"})
 print('1. Exporting bundle from API...')
 response = client.get('/events/export')
 with open('test_export_local.json', 'w') as f:

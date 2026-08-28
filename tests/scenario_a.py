@@ -6,9 +6,13 @@ os.environ["RSA_PASSPHRASE"] = "test-passphrase"
 os.environ["DATA_ENCRYPTION_KEY"] = "tG6jmLlzfdGkKF3Y0Qpb0wYUYSAc0jIo2smsT8_TxfQ="
 
 from fastapi.testclient import TestClient
-from app.api import app, storage
+from app.api import app
+from tests.utils import test_storage as storage
 
-def clean_db():
+anon_client = TestClient(app)
+res = anon_client.post("/auth/token", data={"username": "admin", "password": "supersecret"})
+admin_token = res.json()["access_token"]
+client = TestClient(app, headers={"Authorization": f"Bearer {admin_token}"})
     if hasattr(storage, "db_url"):  # Postgres
         with storage._get_connection() as conn:
             with conn.cursor() as cursor:
@@ -40,7 +44,7 @@ def run_experiment():
     ]
     
     for event in events:
-        client.post("/events", json=event, headers={"Authorization": "Bearer supersecret"})
+        client.post("/events", json=event)
         print(f"   Created Event | Type: {event['eventType']} | Actor: {event['actorId']}")
 
     # 2. Initial Chain Verification (Before Tampering)
