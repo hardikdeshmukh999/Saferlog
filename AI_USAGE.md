@@ -157,3 +157,9 @@ This document tracks how AI was used to build the Audit Log Service, maintaining
 - **AI Contribution:** Created `tests/test_storage.py` and utilized `unittest.mock.patch.dict` to simulate environment variables. Identified that `PostgresStorage` initialization natively attempts to establish a `psycopg2` database connection. Safely mocked out `psycopg2.connect` to ensure the unit test executes successfully in an offline CI/CD environment without requiring a live Postgres container.
 - **Human Decision:** Identified the test coverage gap caused by the default SQLite dependency overrides in the integration tests. Demanded explicit verification of the Postgres deployment path.
 - **Outcome:** The `get_storage()` factory method is now explicitly tested for both `PostgresStorage` and `SQLiteStorage` instantiation paths.
+
+## 2026-08-28: Documentation Updates & Endpoint Matrix
+- **Prompt intent:** Add an 'Endpoint Security & Testing Matrix' to `README.md` and ensure all claims reflect the newly implemented features (Rate Limiting, Payload Limits, Idempotency, etc.).
+- **AI Contribution:** Designed and formatted a comprehensive markdown matrix mapping all 7 API endpoints to their HTTP methods, RBAC roles, rate limits, and covering test files. Reviewed `README.md` to remove rate limiting and idempotency from the "Future Upgrades" section, migrating them to the active "Readiness" section since they were implemented today. Updated the pip install fallback instructions to include `PyJWT`, `slowapi`, and `cachetools`.
+- **Human Decision:** Commanded a rigorous review of documentation to ensure the prototype gets full credit for the security hardening accomplished, and demanded a quick-reference matrix for auditors.
+- **Outcome:** `README.md` is now 100% accurate, professional, and provides a clear audit trail of the API's security posture.

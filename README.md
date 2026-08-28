@@ -32,7 +32,7 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 ```
-*(If `requirements.txt` is missing, run: `pip install fastapi uvicorn sqlite3 cryptography pytest requests`)*
+*(If `requirements.txt` is missing, run: `pip install fastapi uvicorn sqlite3 cryptography pytest requests PyJWT slowapi cachetools psycopg2-binary`)*
 
 ### 2. Required Environment Variables
 Because this application is production-hardened, you MUST supply these environment variables before the app will start. The app will intentionally crash if they are missing.
