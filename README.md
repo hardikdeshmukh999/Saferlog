@@ -208,6 +208,8 @@ This prototype was designed with a clear path to production readiness. The follo
 - **Zero-Trust Access:** A globally enforced HTTP Bearer token strategy (RBAC) ensures that actors can only access their own data, and sensitive compliance endpoints (e.g. `/redact`, `/archive`) are restricted to administrators.
 - **Data-at-Rest Security:** The `sensitive_payloads` table uses application-layer symmetric encryption (AES-GCM via `Fernet`), meaning a raw database dump yields no readable sensitive information.
 - **Fail-Fast Initialization:** The system refuses to boot if cryptographic secrets (`API_TOKEN`, `RSA_PASSPHRASE`, `DATA_ENCRYPTION_KEY`) are not provided via environment variables, preventing accidental deployment with weak or default keys.
+- **Anti-Replay Protections:** An `Idempotency-Key` requirement backed by an in-memory TTL Cache prevents network retries from accidentally duplicating records.
+- **DoS Safeguards:** Strict API Gateway-style Rate Limiting (Token Bucket) and firm Pydantic Payload Size Limits (max 256KB) prevent memory exhaustion and abuse.
 
 ## Ambiguity & Assumptions Log
 During **Scenario C (Compliance Reporting)**, the requirement stated: *"Regulators need to be able to audit access to client account data."*
@@ -233,9 +235,6 @@ During **Scenario B (Structured Redaction)**, the requirement stated that certai
 
 ### Future Non-Functional Upgrades (V1)
 To elevate this prototype to full enterprise-grade maturity, the following non-functional safeguards must be implemented before a V1 release:
-- **API Gateway:** For DDoS protection and strict Rate Limiting.
-- **Payload Size Limits:** To prevent abuse and memory exhaustion during JSON parsing.
-- **Idempotency Keys:** To prevent duplicate event creation during network retries.
 - **Keyset Pagination:** Upgrading from offset pagination to cursor-based pagination for faster deep database reads.
 - **Event Streaming (Kafka/RabbitMQ):** Decoupling the ingestion API from the database write-path using a message broker to handle massive traffic spikes asynchronously.
 
