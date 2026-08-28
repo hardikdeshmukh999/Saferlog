@@ -211,6 +211,18 @@ This prototype was designed with a clear path to production readiness. The follo
 - **Anti-Replay Protections:** An `Idempotency-Key` requirement backed by an in-memory TTL Cache prevents network retries from accidentally duplicating records.
 - **DoS Safeguards:** Strict API Gateway-style Rate Limiting (Token Bucket) and firm Pydantic Payload Size Limits (max 256KB) prevent memory exhaustion and abuse.
 
+## Endpoint Security & Testing Matrix
+
+| API Endpoint | HTTP Method | RBAC Role Required | Rate Limit | Primary Test File Coverage |
+|---|---|---|---|---|
+| `/auth/token` | `POST` | `Any` | None | [`tests/test_api.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_api.py) |
+| `/events` | `POST` | `Any` (Spoof-protected) | `5/second` | [`tests/test_api.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_api.py), [`tests/test_concurrency.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_concurrency.py), [`tests/test_negative.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_negative.py) |
+| `/events` | `GET` | `Any` (Self-filtered) | None | [`tests/test_api.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_api.py), [`tests/test_rbac.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_rbac.py) |
+| `/events/export` | `GET` | `admin` | None | [`tests/scenario_c.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/scenario_c.py), [`tests/test_rbac.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_rbac.py) |
+| `/audit/verify` | `GET` | `admin` | None | [`tests/test_api.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_api.py), [`tests/scenario_a.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/scenario_a.py) |
+| `/events/{hash}/archive` | `POST` | `admin` | None | [`tests/scenario_b.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/scenario_b.py), [`tests/test_rbac.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_rbac.py) |
+| `/events/{hash}/redact/{field}` | `POST` | `admin` | None | [`tests/scenario_b.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/scenario_b.py), [`tests/test_rbac.py`](file:///c:/Users/smart/Desktop/Cursor%20Projects/Saferlog/tests/test_rbac.py) |
+
 ## Ambiguity & Assumptions Log
 During **Scenario C (Compliance Reporting)**, the requirement stated: *"Regulators need to be able to audit access to client account data."*
 This was intentionally ambiguous. I made the following assumptions and design decisions:
